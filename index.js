@@ -29,16 +29,25 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // Shared helpers -----------------------------------------------------------
 
+function ensureDataDir() {
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  }
+}
+
 function loadData(file, defaultValue) {
+  ensureDataDir();
   try {
     const data = fs.readFileSync(`${DATA_DIR}/${file}`, 'utf8');
     return JSON.parse(data);
   } catch (err) {
+    console.warn(`Could not load ${file}: ${err.message}`);
     return defaultValue;
   }
 }
 
 function saveData(file, data) {
+  ensureDataDir();
   fs.writeFileSync(`${DATA_DIR}/${file}`, JSON.stringify(data, null, 2));
 }
 
@@ -1506,9 +1515,27 @@ app.put('/settings', (req, res) => {
 
 // Basic root route with description
 app.get('/', (req, res) => {
+  const resources = [
+    '/inventory',
+    '/teams',
+    '/reviews',
+    '/leads',
+    '/tasks',
+    '/appointments',
+    '/announcements',
+    '/pages',
+    '/faqs',
+    '/webhooks',
+    '/automations',
+    '/integrations',
+    '/reports',
+    '/exports',
+    '/settings',
+    '/dashboard'
+  ];
+
   res.json({
-    message:
-      'RV Dealer Backend API is running. Available resources: /inventory, /teams, /reviews, /leads, /tasks, /appointments, /announcements, /pages, /faqs, /webhooks, /automations, /integrations, /reports, /exports, /settings, /dashboard'
+    message: `RV Dealer Backend API is running. Available resources: ${resources.join(', ')}`
   });
 });
 
