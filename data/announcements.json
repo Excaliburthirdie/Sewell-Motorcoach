@@ -1,0 +1,18 @@
+[
+  {
+    "id": "ann-1",
+    "title": "July sales sprint",
+    "message": "Double points on upsells through Sunday.",
+    "severity": "info",
+    "active": true,
+    "createdAt": "2024-07-10T10:00:00.000Z"
+  },
+  {
+    "id": "ann-2",
+    "title": "Detail bay maintenance",
+    "message": "Bay #2 offline Friday 10am-2pm for pressure washer repair.",
+    "severity": "warning",
+    "active": true,
+    "createdAt": "2024-07-11T08:30:00.000Z"
+  }
+]

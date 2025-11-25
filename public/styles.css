@@ -1,0 +1,45 @@
+body {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+#summary-cards .card {
+  border-left-width: 4px;
+}
+
+#operations-cards .card {
+  border-left-width: 4px;
+}
+
+.list-group-item {
+  border: none;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.list-group-item:last-child {
+  border-bottom: none;
+}
+
+.card-title {
+  font-weight: 700;
+}
+
+.table thead th {
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.table td {
+  vertical-align: middle;
+}
+
+.badge {
+  text-transform: capitalize;
+}
+
+.accordion-button {
+  font-weight: 600;
+}
+
+.card { transition: box-shadow 0.15s ease; }
+.card:hover { box-shadow: 0 0.75rem 1.5rem rgba(0, 0, 0, 0.08) !important; }

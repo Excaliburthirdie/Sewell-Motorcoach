@@ -1,0 +1,29 @@
+[
+  {
+    "id": "hook-1",
+    "name": "CRM Lead Ingest",
+    "url": "https://crm.example.com/hooks/leads",
+    "topics": ["lead.created", "lead.status_changed"],
+    "enabled": true,
+    "lastStatus": 200,
+    "lastSentAt": "2024-12-01T12:00:00Z"
+  },
+  {
+    "id": "hook-2",
+    "name": "Inventory Syndication",
+    "url": "https://feeds.example.com/inventory",
+    "topics": ["inventory.created", "inventory.updated"],
+    "enabled": true,
+    "lastStatus": 202,
+    "lastSentAt": "2024-12-02T08:15:00Z"
+  },
+  {
+    "id": "hook-3",
+    "name": "Slack Alerts",
+    "url": "https://hooks.slack.com/services/team/alerts",
+    "topics": ["task.updated", "appointment.created"],
+    "enabled": false,
+    "lastStatus": 410,
+    "lastSentAt": "2024-11-30T18:45:00Z"
+  }
+]

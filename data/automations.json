@@ -1,0 +1,26 @@
+[
+  {
+    "id": "auto-1",
+    "name": "Auto-assign new leads",
+    "status": "active",
+    "trigger": "lead.created",
+    "actions": [
+      { "type": "create_task", "title": "Call new lead", "priority": "high" }
+    ],
+    "runCount": 3,
+    "createdAt": "2024-11-05T12:00:00Z",
+    "lastRunAt": "2024-12-02T09:30:00Z"
+  },
+  {
+    "id": "auto-2",
+    "name": "Post-delivery follow-up",
+    "status": "paused",
+    "trigger": "appointment.completed",
+    "actions": [
+      { "type": "create_task", "title": "Send satisfaction survey", "priority": "medium" }
+    ],
+    "runCount": 5,
+    "createdAt": "2024-10-10T08:00:00Z",
+    "lastRunAt": "2024-11-18T11:00:00Z"
+  }
+]
