@@ -1,0 +1,32 @@
+[
+  {
+    "id": "1",
+    "stockNumber": "D3343",
+    "industry": "RV",
+    "category": "Motorhome",
+    "subCategory": "Class A Diesel",
+    "condition": "New",
+    "msrp": 300000,
+    "price": 280000,
+    "salePrice": 250000,
+    "location": "Harrodsburg, KY",
+    "daysOnLot": 0,
+    "images": [],
+    "featured": true
+  },
+  {
+    "id": "2",
+    "stockNumber": "D3342",
+    "industry": "RV",
+    "category": "Motorhome",
+    "subCategory": "Class A Diesel",
+    "condition": "New",
+    "msrp": 280000,
+    "price": 260000,
+    "salePrice": 240000,
+    "location": "Harrodsburg, KY",
+    "daysOnLot": 10,
+    "images": [],
+    "featured": false
+  }
+]
