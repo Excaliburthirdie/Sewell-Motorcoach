@@ -35,6 +35,8 @@ function ensureDataDir() {
   }
 }
 
+// Shared helpers -----------------------------------------------------------
+
 function loadData(file, defaultValue) {
   ensureDataDir();
   try {
@@ -59,6 +61,7 @@ function validateFields(payload, requiredFields = []) {
   const missing = requiredFields.filter(
     field => payload[field] === undefined || payload[field] === null || payload[field] === ''
   );
+  const missing = requiredFields.filter(field => payload[field] === undefined || payload[field] === null || payload[field] === '');
   if (missing.length) {
     return `${missing.join(', ')} ${missing.length === 1 ? 'is' : 'are'} required`;
   }
@@ -345,6 +348,7 @@ app.get('/activity', (req, res) => {
   const { limit = 50, type } = req.query;
   const filtered = type ? activity.filter(entry => entry.entityType === type) : activity;
   res.json(filtered.slice(0, clampNumber(limit, 100)));
+  }
 });
 
 /*
@@ -461,6 +465,18 @@ app.put('/inventory/:id', (req, res) => {
 
   inventory[index] = updated;
   saveData('inventory.json', inventory);
+  res.json(updated);
+});
+
+app.patch('/inventory/:id/feature', (req, res) => {
+  const index = inventory.findIndex(u => u.id === req.params.id);
+  if (index === -1) {
+    return respondNotFound(res, 'Unit');
+  }
+
+  const featured = sanitizeBoolean(req.body.featured, true);
+  inventory[index] = { ...inventory[index], featured };
+  saveData('inventory.json', inventory);
   logActivity('update', 'inventory', `Updated ${updated.name || updated.stockNumber}`, { id: updated.id });
   res.json(updated);
 });
@@ -532,6 +548,10 @@ app.get('/inventory/stats', (req, res) => {
     averageDaysOnLot,
     valueByCondition,
     valueByLocation
+  res.json({
+    totalUnits: inventory.length,
+    byCondition,
+    averagePrice
   });
 });
 
@@ -763,6 +783,28 @@ app.put('/leads/:id', (req, res) => {
     : leads[index].status;
 
   leads[index] = { ...leads[index], ...req.body, status };
+  }
+
+  const status = req.body.status && VALID_LEAD_STATUSES.includes(req.body.status)
+    ? req.body.status
+    : leads[index].status;
+
+  leads[index] = { ...leads[index], ...req.body, status };
+  saveData('leads.json', leads);
+  res.json(leads[index]);
+});
+
+app.patch('/leads/:id/status', (req, res) => {
+  const index = leads.findIndex(l => l.id === req.params.id);
+  if (index === -1) {
+    return respondNotFound(res, 'Lead');
+  }
+
+  if (!VALID_LEAD_STATUSES.includes(req.body.status)) {
+    return res.status(400).json({ message: `Status must be one of: ${VALID_LEAD_STATUSES.join(', ')}` });
+  }
+
+  leads[index] = { ...leads[index], status: req.body.status };
   saveData('leads.json', leads);
   logActivity('update', 'lead', `Updated lead ${leads[index].name}`, { id: leads[index].id });
   res.json(leads[index]);
@@ -1216,6 +1258,21 @@ app.delete('/faqs/:id', (req, res) => {
   saveData('faqs.json', faqs);
   logActivity('delete', 'faq', `Removed FAQ ${removed[0].question}`);
   res.json(removed[0]);
+});
+
+app.get('/leads', (req, res) => {
+  const { status, sortBy = 'createdAt', sortDir = 'desc' } = req.query;
+  const filtered = status ? leads.filter(lead => lead.status === status) : leads;
+
+  const sorted = [...filtered].sort((a, b) => {
+    const direction = sortDir === 'asc' ? 1 : -1;
+    if (sortBy === 'name') return a.name.localeCompare(b.name) * direction;
+    const aDate = new Date(a.createdAt).getTime();
+    const bDate = new Date(b.createdAt).getTime();
+    return (aDate - bDate) * direction;
+  });
+
+  res.json(sorted);
 });
 
 /*
