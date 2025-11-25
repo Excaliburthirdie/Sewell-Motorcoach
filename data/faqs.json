@@ -1,0 +1,20 @@
+[
+  {
+    "id": "faq-1",
+    "question": "Do you offer delivery?",
+    "answer": "Yes, we provide nationwide delivery with white-glove handoff and walkthroughs.",
+    "createdAt": "2024-10-02T15:00:00Z"
+  },
+  {
+    "id": "faq-2",
+    "question": "Can I schedule mobile service?",
+    "answer": "Mobile service is available within 250 miles of our store with flexible scheduling.",
+    "createdAt": "2024-10-15T10:00:00Z"
+  },
+  {
+    "id": "faq-3",
+    "question": "What financing terms are available?",
+    "answer": "We partner with RV lenders to offer 10-20 year terms with rate protection and extended service options.",
+    "createdAt": "2024-11-01T09:30:00Z"
+  }
+]

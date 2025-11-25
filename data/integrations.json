@@ -1,0 +1,24 @@
+[
+  {
+    "id": "int-1",
+    "name": "CRM",
+    "provider": "HubSpot",
+    "status": "connected",
+    "lastSyncAt": "2024-12-02T10:10:00Z"
+  },
+  {
+    "id": "int-2",
+    "name": "Email",
+    "provider": "SendGrid",
+    "status": "connected",
+    "lastSyncAt": "2024-12-01T17:00:00Z"
+  },
+  {
+    "id": "int-3",
+    "name": "Analytics",
+    "provider": "Looker",
+    "status": "error",
+    "lastSyncAt": "2024-12-01T08:00:00Z",
+    "error": "API key expired"
+  }
+]

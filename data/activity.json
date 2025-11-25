@@ -1,0 +1,18 @@
+[
+  {
+    "id": "act-1",
+    "action": "create",
+    "entityType": "inventory",
+    "detail": "Added 2022 Newmar Dutch Star",
+    "meta": { "id": "inv-1" },
+    "createdAt": "2024-07-10T12:45:00.000Z"
+  },
+  {
+    "id": "act-2",
+    "action": "update",
+    "entityType": "lead",
+    "detail": "Lead Jane Doe set to contacted",
+    "meta": { "id": "lead-1", "status": "contacted" },
+    "createdAt": "2024-07-11T09:10:00.000Z"
+  }
+]
