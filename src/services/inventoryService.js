@@ -1,7 +1,8 @@
 const { v4: uuidv4 } = require('uuid');
 const { datasets, persist } = require('./state');
-const { clampNumber, escapeOutputPayload, sanitizeBoolean, validateFields } = require('./shared');
+const { clampNumber, escapeOutputPayload, sanitizeBoolean, sanitizeString, validateFields } = require('./shared');
 const { attachTenant, matchesTenant, normalizeTenantId } = require('./tenantService');
+const { INVENTORY_CONDITIONS, TRANSFER_STATUSES } = require('../validation/schemas');
 
 const PRICING_FIELDS = ['price', 'msrp', 'salePrice', 'fees', 'taxes', 'rebates'];
 
@@ -14,7 +15,7 @@ function calculateTotalPrice(unit) {
 }
 
 function safeUnit(unit) {
-  return escapeOutputPayload(unit);
+  return escapeOutputPayload({ ...unit, totalPrice: calculateTotalPrice(unit) });
 }
 
 function list(query = {}, tenantId) {
@@ -41,7 +42,7 @@ function list(query = {}, tenantId) {
     .filter(unit => !industry || unit.industry === industry)
     .filter(unit => !category || unit.category === category)
     .filter(unit => !subcategory || unit.subcategory === subcategory)
-    .filter(unit => !condition || unit.condition === condition)
+    .filter(unit => !condition || sanitizeCondition(unit.condition) === condition)
     .filter(unit => !location || unit.location === location)
     .filter(unit => !transferStatus || unit.transferStatus === transferStatus)
     .filter(unit => (featured === undefined ? true : sanitizeBoolean(featured) === Boolean(unit.featured)))
@@ -83,6 +84,34 @@ function list(query = {}, tenantId) {
 function findById(id, tenantId) {
   const unit = datasets.inventory.find(u => u.id === id && matchesTenant(u.tenantId, tenantId));
   return unit ? safeUnit(unit) : undefined;
+}
+
+function findBySlug(slug, tenantId) {
+  const unit = datasets.inventory.find(u => u.slug === slug && matchesTenant(u.tenantId, tenantId));
+  return unit ? safeUnit(unit) : undefined;
+}
+
+function slugify(value) {
+  if (!value) return undefined;
+  return sanitizeString(String(value))
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80);
+}
+
+function hasVinConflict(vin, tenantId, currentId) {
+  if (!vin) return false;
+  return datasets.inventory.some(
+    unit => matchesTenant(unit.tenantId, tenantId) && unit.vin === vin && unit.id !== currentId
+  );
+}
+
+function hasSlugConflict(slug, tenantId, currentId) {
+  if (!slug) return false;
+  return datasets.inventory.some(
+    unit => matchesTenant(unit.tenantId, tenantId) && unit.slug === slug && unit.id !== currentId
+  );
 }
 
 function create(payload, tenantId) {
@@ -134,11 +163,27 @@ function update(id, payload, tenantId) {
     return { notFound: true };
   }
 
+  if (hasVinConflict(payload.vin, tenantId, id)) {
+    return { conflict: 'VIN already exists for this tenant' };
+  }
+
+  const proposedSlug = payload.slug || datasets.inventory[index].slug || slugify(payload.name || datasets.inventory[index].name);
+  if (hasSlugConflict(proposedSlug, tenantId, id)) {
+    return { conflict: 'Slug already exists for this tenant' };
+  }
+
   const previous = { ...datasets.inventory[index] };
   const updated = {
     ...previous,
     ...payload,
-    featured: sanitizeBoolean(payload.featured, datasets.inventory[index].featured)
+    featured: sanitizeBoolean(payload.featured, datasets.inventory[index].featured),
+    condition: sanitizeCondition(payload.condition) || previous.condition,
+    transferStatus: sanitizeTransferStatus(payload.transferStatus) || previous.transferStatus,
+    rebates: payload.rebates !== undefined ? Number(payload.rebates) : previous.rebates || 0,
+    fees: payload.fees !== undefined ? Number(payload.fees) : previous.fees || 0,
+    taxes: payload.taxes !== undefined ? Number(payload.taxes) : previous.taxes || 0,
+    vin: payload.vin ? sanitizeString(payload.vin) : previous.vin,
+    slug: proposedSlug
   };
 
   const normalizedTenant = normalizeTenantId(tenantId);
@@ -232,5 +277,6 @@ module.exports = {
   update,
   setFeatured,
   remove,
-  stats
+  stats,
+  importCsv
 };

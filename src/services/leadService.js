@@ -32,6 +32,17 @@ function safeLead(lead) {
   return escapeOutputPayload(lead);
 }
 
+function sanitizeDate(value) {
+  if (!value) return undefined;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? undefined : parsed.toISOString();
+}
+
+function isValidTransition(previous, next) {
+  const allowed = VALID_STATUS_TRANSITIONS[previous] || [];
+  return allowed.includes(next);
+}
+
 function findById(id, tenantId) {
   const lead = datasets.leads.find(l => l.id === id && matchesTenant(l.tenantId, tenantId));
   return lead ? safeLead(lead) : undefined;
@@ -56,11 +67,14 @@ function create(payload, tenantId) {
     'assignedTo'
   ]);
 
+  const status = VALID_LEAD_STATUSES.includes(body.status) ? body.status : 'new';
+  const assignedTo = ASSIGNABLE_ROLES.includes(body.assignedTo) ? body.assignedTo : undefined;
+
   const lead = attachTenant(
     {
       id: uuidv4(),
       createdAt: new Date().toISOString(),
-      status: VALID_LEAD_STATUSES.includes(body.status) ? body.status : 'new',
+      status,
       subject: body.subject || 'General inquiry',
       assignedTo: body.assignedTo,
       dueDate: body.dueDate,
@@ -93,9 +107,14 @@ function update(id, payload, tenantId) {
     'assignedTo'
   ]);
 
-  const status = updates.status && VALID_LEAD_STATUSES.includes(updates.status)
-    ? updates.status
-    : datasets.leads[index].status;
+  const nextStatus =
+    updates.status && VALID_LEAD_STATUSES.includes(updates.status)
+      ? updates.status
+      : datasets.leads[index].status;
+
+  if (!isValidTransition(datasets.leads[index].status, nextStatus)) {
+    return { error: `Invalid status transition from ${datasets.leads[index].status} to ${nextStatus}` };
+  }
 
   const before = { ...datasets.leads[index] };
   datasets.leads[index] = { ...datasets.leads[index], ...updates, status };
@@ -136,14 +155,19 @@ function remove(id, tenantId) {
 }
 
 function list(query = {}, tenantId) {
-  const { status, sortBy = 'createdAt', sortDir = 'desc', maskPII } = query;
+  const { status, sortBy = 'createdAt', sortDir = 'desc', maskPII, assignedTo } = query;
   const tenant = normalizeTenantId(tenantId);
   const scoped = datasets.leads.filter(lead => matchesTenant(lead.tenantId, tenant));
-  const filtered = status ? scoped.filter(lead => lead.status === status) : scoped;
+  const filtered = scoped
+    .filter(lead => (status ? lead.status === status : true))
+    .filter(lead => (assignedTo ? lead.assignedTo === assignedTo : true));
 
   const sorted = [...filtered].sort((a, b) => {
     const direction = sortDir === 'asc' ? 1 : -1;
     if (sortBy === 'name') return a.name.localeCompare(b.name) * direction;
+    if (sortBy === 'dueDate') return (new Date(a.dueDate || 0) - new Date(b.dueDate || 0)) * direction;
+    if (sortBy === 'lastContactedAt')
+      return (new Date(a.lastContactedAt || 0) - new Date(b.lastContactedAt || 0)) * direction;
     const aDate = new Date(a.createdAt).getTime();
     const bDate = new Date(b.createdAt).getTime();
     return (aDate - bDate) * direction;

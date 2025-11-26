@@ -139,8 +139,11 @@ variable before starting the server.
 |  POST  | `/auth/logout`   | Revoke a refresh token                      |
 |  GET   | `/auth/me`       | Return the authenticated principal          |
 |  GET   | `/inventory`     | List all inventory units                     |
+|  GET   | `/inventory/stats` | Aggregate inventory stats per tenant       |
 |  GET   | `/inventory/:id` | Retrieve a single unit by ID                |
+|  GET   | `/inventory/slug/:slug` | Retrieve a single unit by slug        |
 |  POST  | `/inventory`     | Create a new unit                           |
+|  POST  | `/inventory/import` | Bulk import inventory from CSV            |
 |  PUT   | `/inventory/:id` | Update an existing unit                     |
 |  DELETE| `/inventory/:id` | Delete a unit                               |
 |  GET   | `/teams`         | List all staff teams                        |
