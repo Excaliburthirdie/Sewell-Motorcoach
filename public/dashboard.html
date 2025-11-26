@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sewell Motorcoach Admin Dashboard</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="bg-light">
+  <nav class="navbar navbar-expand-lg navbar-dark bg-primary mb-4">
+    <div class="container-fluid">
+      <span class="navbar-brand">Sewell Motorcoach</span>
+      <span class="text-light small">Unified operations & insight center</span>
+    </div>
+  </nav>
+
+  <main class="container mb-5">
+    <div class="row g-3" id="summary-cards"></div>
+    <div class="row g-3 mt-1" id="operations-cards"></div>
+
+    <section class="card mt-4 shadow-sm">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h5 class="card-title mb-0">Operations pulse</h5>
+          <span class="text-muted small">Realtime SLA, pipeline, uptime</span>
+        </div>
+        <div class="row g-3">
+          <div class="col-lg-7">
+            <div class="table-responsive small">
+              <table class="table table-sm align-middle" id="pipeline-table">
+                <thead>
+                  <tr>
+                    <th>Stage</th>
+                    <th class="text-end">Count</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="col-lg-5">
+            <h6 class="fw-semibold">Upcoming appointments</h6>
+            <div id="operations-appointments" class="list-group small"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card mt-4 shadow-sm">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h5 class="card-title mb-0">Announcements</h5>
+          <span id="announcement-count" class="badge bg-info"></span>
+        </div>
+        <div id="announcements" class="list-group"></div>
+      </div>
+    </section>
+
+    <div class="row mt-4 g-3">
+      <section class="col-lg-8">
+        <div class="card shadow-sm h-100">
+          <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+              <h5 class="card-title mb-0">Inventory spotlight</h5>
+              <span id="inventory-count" class="badge bg-secondary"></span>
+            </div>
+            <div class="table-responsive">
+              <table class="table table-sm align-middle" id="inventory-table">
+                <thead>
+                  <tr>
+                    <th>Stock #</th>
+                    <th>Name</th>
+                    <th>Condition</th>
+                    <th>Location</th>
+                    <th class="text-end">Price</th>
+                    <th class="text-center">Featured</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+      <section class="col-lg-4">
+        <div class="card shadow-sm h-100">
+          <div class="card-body">
+            <h5 class="card-title mb-3">Appointments</h5>
+            <div id="appointments" class="list-group small"></div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <div class="row mt-4 g-3">
+      <section class="col-lg-4">
+        <div class="card shadow-sm h-100">
+          <div class="card-body">
+            <h5 class="card-title mb-3">Tasks</h5>
+            <div id="tasks" class="list-group small"></div>
+          </div>
+        </div>
+      </section>
+      <section class="col-lg-4">
+        <div class="card shadow-sm h-100">
+          <div class="card-body">
+            <h5 class="card-title mb-3">Recent activity</h5>
+            <div id="activity" class="list-group small"></div>
+          </div>
+        </div>
+      </section>
+      <section class="col-lg-4">
+        <div class="card shadow-sm h-100">
+          <div class="card-body">
+            <h5 class="card-title mb-3">Lead & review insights</h5>
+            <ul class="list-group list-group-flush" id="insights"></ul>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <div class="row mt-4 g-3">
+      <section class="col-lg-6">
+        <div class="card shadow-sm h-100">
+          <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+              <h5 class="card-title mb-0">Control center</h5>
+              <span class="badge bg-secondary" id="webhook-count"></span>
+            </div>
+            <div class="table-responsive">
+              <table class="table table-sm align-middle" id="integrations-table">
+                <thead>
+                  <tr>
+                    <th>Integration</th>
+                    <th>Status</th>
+                    <th class="text-end">Last sync</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+      <section class="col-lg-6">
+        <div class="card shadow-sm h-100">
+          <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+              <h5 class="card-title mb-0">Automations</h5>
+              <span class="badge bg-info" id="automation-count"></span>
+            </div>
+            <div id="automations" class="list-group small"></div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <div class="row mt-4 g-3">
+      <section class="col-lg-7">
+        <div class="card shadow-sm h-100">
+          <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+              <h5 class="card-title mb-0">Published pages</h5>
+              <span class="badge bg-success" id="page-count"></span>
+            </div>
+            <div class="list-group" id="pages"></div>
+          </div>
+        </div>
+      </section>
+      <section class="col-lg-5">
+        <div class="card shadow-sm h-100">
+          <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+              <h5 class="card-title mb-0">FAQs</h5>
+              <span class="badge bg-dark" id="faq-count"></span>
+            </div>
+            <div class="accordion" id="faq-accordion"></div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <section class="card mt-4 shadow-sm">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h5 class="card-title mb-0">Reports</h5>
+          <span class="text-muted small">Conversion, value & coverage</span>
+        </div>
+        <div class="row" id="report-cards"></div>
+      </div>
+    </section>
+  </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/luxon@3.3.0/build/global/luxon.min.js"></script>
+  <script>
+    const DateTime = luxon.DateTime;
+
+    const summaryCards = document.getElementById('summary-cards');
+    const inventoryTableBody = document.querySelector('#inventory-table tbody');
+    const appointmentsList = document.getElementById('appointments');
+    const tasksList = document.getElementById('tasks');
+      const activityList = document.getElementById('activity');
+      const insightsList = document.getElementById('insights');
+      const announcementsList = document.getElementById('announcements');
+      const announcementCount = document.getElementById('announcement-count');
+      const inventoryCount = document.getElementById('inventory-count');
+      const operationsCards = document.getElementById('operations-cards');
+      const pipelineTableBody = document.querySelector('#pipeline-table tbody');
+      const operationsAppointments = document.getElementById('operations-appointments');
+      const integrationsTableBody = document.querySelector('#integrations-table tbody');
+      const webhookCount = document.getElementById('webhook-count');
+      const automationCount = document.getElementById('automation-count');
+      const automationsList = document.getElementById('automations');
+      const pagesList = document.getElementById('pages');
+      const pageCount = document.getElementById('page-count');
+      const faqCount = document.getElementById('faq-count');
+      const faqAccordion = document.getElementById('faq-accordion');
+      const reportCards = document.getElementById('report-cards');
+
+    function fmtDate(value) {
+      return value ? DateTime.fromISO(value).toLocaleString(DateTime.DATETIME_MED) : '—';
+    }
+
+      function createSummaryCard(title, value, accent) {
+        const card = document.createElement('div');
+        card.className = 'col-12 col-md-6 col-lg-3';
+        card.innerHTML = `
+          <div class="card shadow-sm border-${accent}">
+          <div class="card-body">
+            <p class="text-muted text-uppercase small mb-1">${title}</p>
+            <h3 class="card-title mb-0">${value}</h3>
+          </div>
+        </div>
+        `;
+        summaryCards.appendChild(card);
+      }
+
+      function createOperationCard(title, value, description, accent) {
+        const card = document.createElement('div');
+        card.className = 'col-12 col-md-6 col-lg-3';
+        card.innerHTML = `
+          <div class="card shadow-sm border-${accent}">
+            <div class="card-body">
+              <p class="text-muted text-uppercase small mb-1">${title}</p>
+              <h4 class="card-title mb-0">${value}</h4>
+              <div class="small text-muted">${description}</div>
+            </div>
+          </div>
+        `;
+        operationsCards.appendChild(card);
+      }
+
+    async function fetchJson(url) {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('Request failed');
+      return res.json();
+    }
+
+      async function loadSummary() {
+        const data = await fetchJson('/dashboard/summary');
+        summaryCards.innerHTML = '';
+        createSummaryCard('Inventory units', data.inventory.total, 'primary');
+        createSummaryCard('Open leads', data.leads.total, 'info');
+        createSummaryCard('Open tasks', data.tasks.open, 'warning');
+        createSummaryCard('Average rating', data.reviews.averageRating || '0', 'success');
+
+      announcementCount.textContent = `${data.announcements.length} active`;
+      announcementsList.innerHTML = data.announcements
+        .map(
+          (ann) => `
+            <div class="list-group-item list-group-item-action d-flex justify-content-between align-items-start">
+              <div>
+                <div class="fw-semibold">${ann.title}</div>
+                <small class="text-muted">${ann.message}</small>
+              </div>
+              <span class="badge bg-${ann.severity === 'critical' ? 'danger' : ann.severity === 'warning' ? 'warning' : 'info'}">${ann.severity}</span>
+            </div>
+          `
+        )
+        .join('');
+
+        inventoryCount.textContent = `${data.inventory.featured} featured / ${data.inventory.total} total`;
+      }
+
+      async function loadOperations() {
+        const data = await fetchJson('/dashboard/operations');
+        operationsCards.innerHTML = '';
+        createOperationCard('Lead SLA', `${data.sla.leadResponseHours}h`, `${data.sla.breaches} breaches`, 'danger');
+        createOperationCard('Task completion', `${data.productivity.completionRate}%`, 'Closed vs open', 'success');
+        createOperationCard('Overdue tasks', data.productivity.overdue, 'Needing attention', 'warning');
+        createOperationCard('Uptime (90d)', `${data.siteStatus.uptime90d}%`, data.siteStatus.maintenanceMode ? 'Maintenance' : 'Healthy', 'info');
+
+        pipelineTableBody.innerHTML = Object.entries(data.pipeline)
+          .map(([stage, count]) => `
+            <tr>
+              <td class="text-capitalize">${stage}</td>
+              <td class="text-end fw-semibold">${count}</td>
+            </tr>
+          `)
+          .join('');
+
+        operationsAppointments.innerHTML = data.upcomingAppointments
+          .map(
+            (appt) => `
+              <div class="list-group-item d-flex justify-content-between">
+                <div>
+                  <div class="fw-semibold">${appt.customerName}</div>
+                  <div class="small text-muted">${fmtDate(appt.scheduledFor)}</div>
+                </div>
+                <span class="badge bg-secondary">${appt.type}</span>
+              </div>
+            `
+          )
+          .join('');
+      }
+
+      async function loadInventory() {
+        const data = await fetchJson('/inventory');
+        inventoryTableBody.innerHTML = data.items
+          .slice(0, 8)
+          .map(
+          (unit) => `
+            <tr>
+              <td class="text-nowrap">${unit.stockNumber || '—'}</td>
+              <td>${unit.name || 'Untitled'}</td>
+              <td>${unit.condition || '—'}</td>
+              <td>${unit.location || '—'}</td>
+              <td class="text-end">$${Number(unit.price || 0).toLocaleString()}</td>
+              <td class="text-center">${unit.featured ? '⭐️' : '—'}</td>
+            </tr>
+          `
+        )
+          .join('');
+      }
+
+      async function loadControlCenter() {
+        const data = await fetchJson('/dashboard/control-center');
+        webhookCount.textContent = `${data.webhooks.enabled}/${data.webhooks.total} active`;
+        integrationsTableBody.innerHTML = data.integrations
+          .map(
+            (integration) => `
+              <tr>
+                <td>${integration.name} <span class="text-muted small">${integration.provider}</span></td>
+                <td>
+                  <span class="badge bg-${integration.status === 'connected' ? 'success' : integration.status === 'error' ? 'danger' : 'secondary'}">${integration.status}</span>
+                  ${integration.error ? `<div class="small text-danger">${integration.error}</div>` : ''}
+                </td>
+                <td class="text-end small text-muted">${integration.lastSyncAt ? fmtDate(integration.lastSyncAt) : '—'}</td>
+              </tr>
+            `
+          )
+          .join('');
+      }
+
+      async function loadAppointments() {
+        const data = await fetchJson('/appointments?sortDir=asc');
+        appointmentsList.innerHTML = data
+          .slice(0, 5)
+        .map(
+          (appt) => `
+            <div class="list-group-item">
+              <div class="d-flex justify-content-between">
+                <span class="fw-semibold">${appt.customerName}</span>
+                <span class="badge bg-secondary">${appt.type}</span>
+              </div>
+              <div class="text-muted small">${fmtDate(appt.scheduledFor)}</div>
+              <div class="small">${appt.status}</div>
+            </div>
+          `
+          )
+          .join('');
+      }
+
+      async function loadAutomations() {
+        const data = await fetchJson('/automations');
+        automationCount.textContent = `${data.length} rules`;
+        automationsList.innerHTML = data
+          .map(
+            (rule) => `
+              <div class="list-group-item d-flex justify-content-between align-items-start">
+                <div>
+                  <div class="fw-semibold">${rule.name}</div>
+                  <small class="text-muted">Trigger: ${rule.trigger}</small>
+                </div>
+                <span class="badge bg-${rule.status === 'active' ? 'success' : 'secondary'}">${rule.status}</span>
+              </div>
+            `
+          )
+          .join('');
+      }
+
+      async function loadPages() {
+        const data = await fetchJson('/pages?status=published');
+        pageCount.textContent = `${data.length} live`;
+        pagesList.innerHTML = data
+          .map(
+            (page) => `
+              <div class="list-group-item">
+                <div class="d-flex justify-content-between align-items-center">
+                  <div>
+                    <div class="fw-semibold">${page.title}</div>
+                    <small class="text-muted">/${page.slug}</small>
+                  </div>
+                  <span class="badge bg-success">${page.status}</span>
+                </div>
+                <div class="small text-muted">Updated ${fmtDate(page.updatedAt)}</div>
+              </div>
+            `
+          )
+          .join('');
+      }
+
+      async function loadFaqs() {
+        const data = await fetchJson('/faqs');
+        faqCount.textContent = `${data.length}`;
+        faqAccordion.innerHTML = data
+          .map(
+            (faq, index) => `
+              <div class="accordion-item">
+                <h2 class="accordion-header" id="faq-${index}">
+                  <button class="accordion-button ${index > 0 ? 'collapsed' : ''}" type="button" data-bs-toggle="collapse" data-bs-target="#collapse-${index}">
+                    ${faq.question}
+                  </button>
+                </h2>
+                <div id="collapse-${index}" class="accordion-collapse collapse ${index === 0 ? 'show' : ''}" data-bs-parent="#faq-accordion">
+                  <div class="accordion-body">${faq.answer}</div>
+                </div>
+              </div>
+            `
+          )
+          .join('');
+      }
+
+    async function loadTasks() {
+      const data = await fetchJson('/tasks');
+      tasksList.innerHTML = data
+        .slice(0, 6)
+        .map(
+          (task) => `
+            <div class="list-group-item d-flex justify-content-between align-items-start">
+              <div>
+                <div class="fw-semibold">${task.title}</div>
+                <small class="text-muted">${task.assignedTo || 'Unassigned'} • Due ${fmtDate(task.dueDate)}</small>
+              </div>
+              <span class="badge bg-${task.status === 'done' ? 'success' : 'warning'}">${task.status}</span>
+            </div>
+          `
+        )
+        .join('');
+    }
+
+    async function loadActivity() {
+      const data = await fetchJson('/activity?limit=10');
+      activityList.innerHTML = data
+        .map(
+          (item) => `
+            <div class="list-group-item">
+              <div class="d-flex justify-content-between">
+                <span class="fw-semibold text-capitalize">${item.action} ${item.entityType}</span>
+                <small class="text-muted">${fmtDate(item.createdAt)}</small>
+              </div>
+              <div class="small">${item.detail}</div>
+            </div>
+          `
+        )
+        .join('');
+    }
+
+      async function loadInsights() {
+        const data = await fetchJson('/dashboard/insights');
+        insightsList.innerHTML = `
+          <li class="list-group-item d-flex justify-content-between">
+            <span>Avg lead response (hrs)</span>
+          <strong>${data.leadResponseHours}</strong>
+        </li>
+        <li class="list-group-item">
+          <div class="fw-semibold mb-1">Inventory by location</div>
+          ${Object.entries(data.inventoryLocations)
+            .map(([loc, count]) => `<div class="small d-flex justify-content-between"><span>${loc}</span><span>${count}</span></div>`)
+            .join('') || '<small class="text-muted">No data</small>'}
+        </li>
+        <li class="list-group-item">
+          <div class="fw-semibold mb-1">Top team members</div>
+          ${(data.topTeamMembers || [])
+            .map((m) => `<div class="small">${m.name || '—'} • ${m.jobRole || ''}</div>`)
+            .join('') || '<small class="text-muted">No team members yet</small>'}
+          </li>
+        `;
+      }
+
+      async function loadReports() {
+        const data = await fetchJson('/reports/overview');
+        reportCards.innerHTML = `
+          <div class="col-md-3">
+            <div class="card shadow-sm border-success">
+              <div class="card-body">
+                <p class="text-muted small mb-1">Lead conversion</p>
+                <h4 class="mb-0">${data.conversionRate}%</h4>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="card shadow-sm border-primary">
+              <div class="card-body">
+                <p class="text-muted small mb-1">Avg lead value</p>
+                <h4 class="mb-0">$${Number(data.averageLeadValue || 0).toLocaleString()}</h4>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="card shadow-sm border-warning">
+              <div class="card-body">
+                <p class="text-muted small mb-1">Avg task age (hrs)</p>
+                <h4 class="mb-0">${data.avgTaskAgeHours}</h4>
+              </div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="card shadow-sm border-info">
+              <div class="card-body">
+                <p class="text-muted small mb-1">Inventory value</p>
+                <h4 class="mb-0">$${Number(data.revenueFootprint || 0).toLocaleString()}</h4>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+    async function bootstrap() {
+        try {
+          await Promise.all([
+            loadSummary(),
+            loadOperations(),
+            loadInventory(),
+            loadAppointments(),
+            loadTasks(),
+            loadActivity(),
+            loadInsights(),
+            loadControlCenter(),
+            loadAutomations(),
+            loadPages(),
+            loadFaqs(),
+            loadReports()
+          ]);
+        } catch (err) {
+          summaryCards.innerHTML = `<div class="alert alert-danger">Failed to load dashboard data.</div>`;
+          console.error(err);
+        }
+    }
+
+    bootstrap();
+  </script>
+</body>
+</html>

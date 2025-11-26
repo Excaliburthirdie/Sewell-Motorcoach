@@ -1,0 +1,24 @@
+[
+  {
+    "id": "camp-6001",
+    "name": "Spring Luxury Push",
+    "channel": "google",
+    "budget": 25000,
+    "spendToDate": 6400,
+    "status": "active",
+    "startDate": "2025-02-01",
+    "endDate": "2025-03-31",
+    "kpi": {"cpl": 58, "leads": 110}
+  },
+  {
+    "id": "camp-6002",
+    "name": "RV Show Louisville",
+    "channel": "events",
+    "budget": 12000,
+    "spendToDate": 3000,
+    "status": "draft",
+    "startDate": "2025-03-10",
+    "endDate": "2025-03-15",
+    "kpi": {"registrations": 85}
+  }
+]

@@ -1,0 +1,24 @@
+[
+  {
+    "id": "svc-2001",
+    "title": "Slide-out alignment",
+    "customerName": "Marissa Dalton",
+    "issue": "Passenger side slide is sticking halfway",
+    "status": "waiting_parts",
+    "priority": "high",
+    "assignedTo": "tech-1",
+    "scheduledDate": "2025-02-10T14:00:00.000Z",
+    "createdAt": "2025-02-05T16:00:00.000Z"
+  },
+  {
+    "id": "svc-2002",
+    "title": "Generator maintenance",
+    "customerName": "Samir Patel",
+    "issue": "Annual service due",
+    "status": "open",
+    "priority": "medium",
+    "assignedTo": "tech-2",
+    "scheduledDate": "2025-02-15T15:00:00.000Z",
+    "createdAt": "2025-02-07T10:00:00.000Z"
+  }
+]

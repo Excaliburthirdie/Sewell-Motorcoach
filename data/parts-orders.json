@@ -1,0 +1,22 @@
+[
+  {
+    "id": "part-8001",
+    "partNumber": "GEN-ONAN-5500",
+    "description": "Onan 5500 service kit",
+    "quantity": 3,
+    "status": "processing",
+    "vendor": "NTPStag",
+    "eta": "2025-02-12",
+    "createdAt": "2025-02-06T12:00:00.000Z"
+  },
+  {
+    "id": "part-8002",
+    "partNumber": "SLIDE-SEAL-24",
+    "description": "Slide-out seal kit",
+    "quantity": 5,
+    "status": "backordered",
+    "vendor": "Stromberg",
+    "eta": "2025-02-20",
+    "createdAt": "2025-02-05T09:00:00.000Z"
+  }
+]

@@ -1,0 +1,44 @@
+[
+  {
+    "id": "page-hero",
+    "title": "Luxury Motorcoaches",
+    "slug": "luxury-motorcoaches",
+    "status": "published",
+    "excerpt": "Browse hand-curated luxury coaches ready for delivery.",
+    "content": "<h1>Luxury Motorcoaches</h1><p>Experience concierge ownership with Sewell Motorcoach.</p>",
+    "seo": {
+      "metaTitle": "Luxury Motorcoaches",
+      "metaDescription": "Browse luxury motorcoaches ready for delivery"
+    },
+    "createdAt": "2024-11-01T10:00:00Z",
+    "updatedAt": "2024-11-10T10:00:00Z"
+  },
+  {
+    "id": "page-service",
+    "title": "Service & Support",
+    "slug": "service-support",
+    "status": "published",
+    "excerpt": "Certified technicians, mobile service, and transparent estimates.",
+    "content": "<p>Schedule concierge service visits with our certified team.</p>",
+    "seo": {
+      "metaTitle": "Service & Support",
+      "metaDescription": "Certified technicians and mobile service"
+    },
+    "createdAt": "2024-10-15T12:30:00Z",
+    "updatedAt": "2024-11-05T12:30:00Z"
+  },
+  {
+    "id": "page-finance",
+    "title": "Financing",
+    "slug": "financing",
+    "status": "draft",
+    "excerpt": "Flexible terms with RV specialists and warranty options.",
+    "content": "<p>Explore competitive financing and protection plans.</p>",
+    "seo": {
+      "metaTitle": "Financing",
+      "metaDescription": "Flexible RV financing"
+    },
+    "createdAt": "2024-11-20T09:20:00Z",
+    "updatedAt": "2024-11-20T09:20:00Z"
+  }
+]

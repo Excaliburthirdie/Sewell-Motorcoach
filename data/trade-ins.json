@@ -1,0 +1,20 @@
+[
+  {
+    "id": "trade-3001",
+    "customerName": "Alexis Stone",
+    "vehicle": "2017 Airstream Interstate",
+    "estimatedValue": 145000,
+    "status": "appraisal",
+    "notes": "Needs roof reseal",
+    "createdAt": "2025-02-06T13:00:00.000Z"
+  },
+  {
+    "id": "trade-3002",
+    "customerName": "Jordan Lee",
+    "vehicle": "2014 Tiffin Allegro Bus",
+    "estimatedValue": 180000,
+    "status": "pending",
+    "notes": "Low miles, includes tow dolly",
+    "createdAt": "2025-02-08T09:00:00.000Z"
+  }
+]

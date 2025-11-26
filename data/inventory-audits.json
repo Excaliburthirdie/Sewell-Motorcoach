@@ -1,0 +1,25 @@
+[
+  {
+    "id": "audit-9001",
+    "auditor": "Quentin Moore",
+    "date": "2025-02-04",
+    "sampleSize": 12,
+    "discrepancies": [
+      {"stockNumber": "D3350", "issue": "Missing window sticker"},
+      {"stockNumber": "X2201", "issue": "Odometer reading not captured"}
+    ],
+    "notes": "All units present, minor data gaps",
+    "createdAt": "2025-02-04T20:00:00.000Z"
+  },
+  {
+    "id": "audit-9002",
+    "auditor": "Lena Torres",
+    "date": "2025-01-28",
+    "sampleSize": 8,
+    "discrepancies": [
+      {"stockNumber": "B1188", "issue": "Detailing not completed"}
+    ],
+    "notes": "Inventory staging clean",
+    "createdAt": "2025-01-28T18:00:00.000Z"
+  }
+]

@@ -1,0 +1,22 @@
+[
+  {
+    "id": "task-1",
+    "title": "Prep units for weekend showroom",
+    "description": "Detail interiors, refill brochures, verify power hookups.",
+    "status": "in_progress",
+    "priority": "high",
+    "assignedTo": "Alyssa",
+    "dueDate": "2024-07-15T16:00:00.000Z",
+    "createdAt": "2024-07-10T13:00:00.000Z"
+  },
+  {
+    "id": "task-2",
+    "title": "Upload new photo set for 2023 Entegra Aspire",
+    "description": "Use twilight photos and tag as featured",
+    "status": "todo",
+    "priority": "medium",
+    "assignedTo": "Ramon",
+    "dueDate": "2024-07-18T21:00:00.000Z",
+    "createdAt": "2024-07-11T15:30:00.000Z"
+  }
+]

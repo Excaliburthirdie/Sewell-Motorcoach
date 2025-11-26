@@ -1,0 +1,22 @@
+[
+  {
+    "id": "fin-4001",
+    "applicantName": "Samir Patel",
+    "amount": 450000,
+    "downPayment": 90000,
+    "status": "in_review",
+    "inventoryId": "unit-101",
+    "lender": "BankOne",
+    "createdAt": "2025-02-07T18:00:00.000Z"
+  },
+  {
+    "id": "fin-4002",
+    "applicantName": "Carmen Vega",
+    "amount": 520000,
+    "downPayment": 104000,
+    "status": "approved",
+    "inventoryId": "unit-102",
+    "lender": "RV Finance Co",
+    "createdAt": "2025-01-28T15:00:00.000Z"
+  }
+]

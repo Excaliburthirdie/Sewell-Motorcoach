@@ -1,0 +1,28 @@
+[
+  {
+    "id": "cust-1001",
+    "name": "Marissa Dalton",
+    "email": "marissa.dalton@example.com",
+    "phone": "+1-859-555-1010",
+    "city": "Lexington",
+    "segment": "loyalist",
+    "lifetimeValue": 325000,
+    "owner": "sales-team-1",
+    "tags": ["repeat", "service-plan"],
+    "preferences": {"contact": "email", "newsletter": true},
+    "createdAt": "2024-11-05T15:00:00.000Z"
+  },
+  {
+    "id": "cust-1002",
+    "name": "Samir Patel",
+    "email": "samir.patel@example.com",
+    "phone": "+1-502-555-7744",
+    "city": "Louisville",
+    "segment": "prospect",
+    "lifetimeValue": 0,
+    "owner": "sales-team-2",
+    "tags": ["finance"],
+    "preferences": {"contact": "sms", "newsletter": false},
+    "createdAt": "2025-01-12T18:30:00.000Z"
+  }
+]
