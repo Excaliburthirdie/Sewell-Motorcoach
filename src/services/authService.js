@@ -55,6 +55,17 @@ function generateTokens(user, rotatedFrom) {
   return { accessToken, refreshToken };
 }
 
+function recordRevocation(jti, reason) {
+  const entry = {
+    jti,
+    reason,
+    revokedAt: new Date().toISOString()
+  };
+  datasets.revokedRefreshTokens.push(entry);
+  persist.revokedRefreshTokens(datasets.revokedRefreshTokens);
+  return entry;
+}
+
 function authenticate(username, password, tenantId) {
   const user = findUser(username, tenantId);
   if (!user || !validatePassword(user, password)) {
@@ -77,8 +88,12 @@ function verifyRefreshToken(token) {
   if (payload.type !== 'refresh') {
     throw new Error('Invalid refresh token type');
   }
+  if (datasets.revokedRefreshTokens.find(entry => entry.jti === payload.jti)) {
+    throw new Error('Refresh token has been revoked');
+  }
   const record = datasets.refreshTokens.find(entry => entry.jti === payload.jti);
   if (!record) {
+    recordRevocation(payload.jti, 'reused_or_unknown');
     throw new Error('Refresh token has been rotated or revoked');
   }
   const expiresAt = new Date(record.expiresAt).getTime();
@@ -97,6 +112,7 @@ function rotateRefresh(refreshToken) {
   if (!matchesTenant(payload.tenantId, user.tenantId)) {
     throw new Error('Refresh token tenant mismatch');
   }
+  recordRevocation(record.jti, 'rotated');
   datasets.refreshTokens = datasets.refreshTokens.filter(entry => entry.jti !== record.jti);
   persist.refreshTokens(datasets.refreshTokens);
   const tokens = generateTokens(user, payload.jti);
@@ -105,6 +121,7 @@ function rotateRefresh(refreshToken) {
 
 function revokeRefreshToken(refreshToken) {
   const { record } = verifyRefreshToken(refreshToken);
+  recordRevocation(record.jti, 'revoked');
   datasets.refreshTokens = datasets.refreshTokens.filter(entry => entry.jti !== record.jti);
   persist.refreshTokens(datasets.refreshTokens);
   return record;

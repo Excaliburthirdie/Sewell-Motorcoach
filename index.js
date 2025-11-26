@@ -13,6 +13,8 @@ const teamService = require('./src/services/teamService');
 const reviewService = require('./src/services/reviewService');
 const leadService = require('./src/services/leadService');
 const settingsService = require('./src/services/settingsService');
+const contentPageService = require('./src/services/contentPageService');
+const eventService = require('./src/services/eventService');
 const authService = require('./src/services/authService');
 const { datasets } = require('./src/services/state');
 const tenantService = require('./src/services/tenantService');
@@ -44,6 +46,25 @@ const REFRESH_COOKIE_OPTIONS = {
 };
 
 const rateLimitBuckets = new Map();
+const loginAttempts = new Map();
+const routeMetrics = new Map();
+
+function recordLoginAttempt(ip, success) {
+  if (success) {
+    loginAttempts.delete(ip);
+    return;
+  }
+  const existing = loginAttempts.get(ip) || { failures: 0, lastAttempt: 0 };
+  loginAttempts.set(ip, { failures: existing.failures + 1, lastAttempt: Date.now() });
+}
+
+function getLoginBackoff(ip) {
+  const record = loginAttempts.get(ip);
+  if (!record) return 0;
+  const delay = 1000 * 2 ** Math.max(0, record.failures - 1);
+  const elapsed = Date.now() - record.lastAttempt;
+  return Math.max(0, delay - elapsed);
+}
 
 function parseCookies(req, _res, next) {
   req.cookies = {};
@@ -111,6 +132,12 @@ app.use((req, res, next) => {
       status: res.statusCode,
       durationMs
     };
+    const key = `${req.method} ${req.route?.path || req.path.split('?')[0] || req.originalUrl.split('?')[0]}`;
+    const record = routeMetrics.get(key) || { count: 0, totalMs: 0, statusCounts: {} };
+    record.count += 1;
+    record.totalMs += durationMs;
+    record.statusCounts[res.statusCode] = (record.statusCounts[res.statusCode] || 0) + 1;
+    routeMetrics.set(key, record);
     console.log(JSON.stringify(log));
   });
   next();
@@ -208,14 +235,22 @@ const api = express.Router();
 
 api.post('/auth/login', validateBody(schemas.authLogin), (req, res, next) => {
   const { username, password, tenantId } = req.validated.body;
+  const penalty = getLoginBackoff(req.ip);
+  if (penalty > 0) {
+    return next(
+      new AppError('RATE_LIMIT_EXCEEDED', `Too many login attempts. Retry in ${Math.ceil(penalty / 1000)}s`, 429)
+    );
+  }
   const tenant = tenantService.resolveTenantId(tenantId || req.tenant?.id);
   if (!tenant) {
     return next(new AppError('TENANT_NOT_FOUND', 'Tenant not found for login', 404));
   }
   const result = authService.authenticate(username, password, tenant);
   if (!result) {
+    recordLoginAttempt(req.ip, false);
     return next(new AppError('UNAUTHORIZED', 'Invalid username or password', 401));
   }
+  recordLoginAttempt(req.ip, true);
   const csrfToken = issueCsrfToken(res);
   res.cookie('refreshToken', result.tokens.refreshToken, REFRESH_COOKIE_OPTIONS);
   res.json({
@@ -318,6 +353,43 @@ api.post(
   }
 );
 
+api.get('/content', (req, res) => {
+  res.json(contentPageService.list(req.query, req.tenant.id));
+});
+
+api.get('/content/slug/:slug', (req, res, next) => {
+  const page = contentPageService.findBySlug(req.params.slug, req.tenant.id);
+  if (!page) return next(new AppError('NOT_FOUND', 'Content page not found', 404));
+  res.json(page);
+});
+
+api.get('/content/:id', validateParams(schemas.idParam), (req, res, next) => {
+  const page = contentPageService.findById(req.validated.params.id, req.tenant.id);
+  if (!page) return next(new AppError('NOT_FOUND', 'Content page not found', 404));
+  res.json(page);
+});
+
+api.post('/content', requireAuth, authorize(['admin', 'marketing']), validateBody(schemas.contentPageCreate), (req, res, next) => {
+  const result = contentPageService.create(req.validated.body, req.tenant.id);
+  if (result.error) return next(new AppError('VALIDATION_ERROR', result.error, 400));
+  if (result.conflict) return next(new AppError('CONFLICT', result.conflict, 409));
+  res.status(201).json(result.page);
+});
+
+api.put('/content/:id', requireAuth, authorize(['admin', 'marketing']), validateBody(schemas.contentPageUpdate), (req, res, next) => {
+  const result = contentPageService.update(req.params.id, req.validated.body, req.tenant.id);
+  if (result.notFound) return next(new AppError('NOT_FOUND', 'Content page not found', 404));
+  if (result.error) return next(new AppError('VALIDATION_ERROR', result.error, 400));
+  if (result.conflict) return next(new AppError('CONFLICT', result.conflict, 409));
+  res.json(result.page);
+});
+
+api.delete('/content/:id', requireAuth, authorize(['admin', 'marketing']), (req, res, next) => {
+  const result = contentPageService.remove(req.params.id, req.tenant.id);
+  if (result.notFound) return next(new AppError('NOT_FOUND', 'Content page not found', 404));
+  res.status(204).send();
+});
+
 api.patch('/inventory/:id/feature', requireAuth, authorize(['admin', 'sales']), (req, res, next) => {
   const result = inventoryService.setFeatured(req.params.id, req.body.featured, req.tenant.id);
   if (result.notFound) return next(new AppError('NOT_FOUND', 'Inventory not found', 404));
@@ -366,6 +438,12 @@ api.delete('/leads/:id', requireAuth, authorize(['admin', 'marketing']), (req, r
   const result = leadService.remove(req.params.id, req.tenant.id);
   if (result.notFound) return next(new AppError('NOT_FOUND', 'Lead not found', 404));
   res.status(204).send();
+});
+
+api.post('/events', validateBody(schemas.eventCreate), (req, res, next) => {
+  const result = eventService.create(req.validated.body, req.tenant.id);
+  if (result.error) return next(new AppError('VALIDATION_ERROR', result.error, 400));
+  res.status(201).json(result.event);
 });
 
 api.get('/teams', (req, res) => {
@@ -436,7 +514,30 @@ api.get('/health', (req, res) => {
   });
 });
 
+api.get('/sitemap', (req, res) => {
+  const tenantId = req.tenant.id;
+  const inventory = inventoryService.list({}, tenantId).items.map(item => ({
+    type: 'inventory',
+    slug: item.slug,
+    id: item.id
+  }));
+  const pages = contentPageService.list({}, tenantId).map(page => ({ type: 'content', slug: page.slug, id: page.id }));
+  res.json({
+    tenantId,
+    generatedAt: new Date().toISOString(),
+    entries: [...inventory, ...pages]
+  });
+});
+
 api.get('/metrics', (req, res) => {
+  const tenantId = req.tenant.id;
+  const routePerformance = Array.from(routeMetrics.entries()).map(([key, value]) => ({
+    route: key,
+    averageMs: value.count ? value.totalMs / value.count : 0,
+    total: value.count,
+    statusCounts: value.statusCounts
+  }));
+  const rollup = eventService.dailyRollup(tenantId);
   res.json({
     counts: {
       inventory: datasets.inventory.length,
@@ -446,8 +547,12 @@ api.get('/metrics', (req, res) => {
       capabilities: datasets.capabilities.length,
       customers: datasets.customers.length,
       serviceTickets: datasets.serviceTickets.length,
-      financeOffers: datasets.financeOffers.length
-    }
+      financeOffers: datasets.financeOffers.length,
+      events: datasets.events.length,
+      contentPages: datasets.contentPages.length
+    },
+    routePerformance,
+    rollup
   });
 });
 
