@@ -63,7 +63,7 @@ function findById(id, tenantId) {
 }
 
 function create(payload, tenantId) {
-  const requiredError = validateFields(payload, ['stockNumber', 'name', 'condition', 'price', 'vin', 'year']);
+  const requiredError = validateFields(payload, ['stockNumber', 'name', 'condition', 'price']);
   if (requiredError) {
     return { error: requiredError };
   }
@@ -74,15 +74,6 @@ function create(payload, tenantId) {
       featured: sanitizeBoolean(payload.featured, false),
       createdAt: new Date().toISOString(),
       images: Array.isArray(payload.images) ? payload.images : [],
-      price: Number(payload.price),
-      msrp: payload.msrp !== undefined ? Number(payload.msrp) : undefined,
-      salePrice: payload.salePrice !== undefined ? Number(payload.salePrice) : undefined,
-      rebates: payload.rebates !== undefined ? Number(payload.rebates) : undefined,
-      taxes: payload.taxes !== undefined ? Number(payload.taxes) : undefined,
-      fees: payload.fees !== undefined ? Number(payload.fees) : undefined,
-      year: Number(payload.year),
-      length: payload.length !== undefined ? Number(payload.length) : undefined,
-      weight: payload.weight !== undefined ? Number(payload.weight) : undefined,
       ...payload
     },
     tenantId

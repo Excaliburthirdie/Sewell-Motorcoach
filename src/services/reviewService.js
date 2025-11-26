@@ -54,14 +54,9 @@ function remove(id, tenantId) {
   return { review: removed };
 }
 
-function findById(id, tenantId) {
-  return datasets.reviews.find(review => review.id === id && matchesTenant(review.tenantId, tenantId));
-}
-
 module.exports = {
   list,
   create,
   update,
-  remove,
-  findById
+  remove
 };

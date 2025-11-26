@@ -33,14 +33,8 @@ const REFRESH_COOKIE_OPTIONS = {
   httpOnly: true,
   secure: COOKIE_SECURE,
   sameSite: COOKIE_SECURE ? 'none' : 'lax',
-  path: '/',
+  path: '/v1/auth/refresh',
   maxAge: config.auth.refreshTokenTtlSeconds * 1000
-};
-const CSRF_COOKIE_OPTIONS = {
-  httpOnly: false,
-  secure: COOKIE_SECURE,
-  sameSite: COOKIE_SECURE ? 'none' : 'lax',
-  path: '/'
 };
 
 const rateLimitBuckets = new Map();
@@ -259,24 +253,6 @@ api.post('/auth/refresh', validateBody(schemas.authRefresh), (req, res, next) =>
   }
 });
 
-api.post('/auth/logout', validateBody(schemas.authRefresh), (req, res, next) => {
-  try {
-    const token = req.validated.body.refreshToken || req.cookies?.refreshToken;
-    if (!token) {
-      return next(new AppError('UNAUTHORIZED', 'Refresh token missing', 401));
-    }
-    authService.revokeRefreshToken(token);
-    res.clearCookie('refreshToken', { ...REFRESH_COOKIE_OPTIONS, maxAge: 0 });
-    res.status(204).send();
-  } catch (err) {
-    return next(new AppError('UNAUTHORIZED', err.message || 'Invalid refresh token', 401));
-  }
-});
-
-api.get('/auth/me', requireAuth, (req, res) => {
-  res.json({ user: req.user });
-});
-
 api.get('/capabilities', (req, res) => {
   res.json(capabilityService.list(req.query));
 });
@@ -371,12 +347,6 @@ api.get('/teams', (req, res) => {
   res.json(teamService.list(req.query, req.tenant.id));
 });
 
-api.get('/teams/:id', validateParams(schemas.idParam), (req, res, next) => {
-  const team = teamService.findById(req.validated.params.id, req.tenant.id);
-  if (!team) return next(new AppError('NOT_FOUND', 'Team not found', 404));
-  res.json(team);
-});
-
 api.post('/teams', requireAuth, authorize(['admin']), (req, res, next) => {
   const result = teamService.create(req.body, req.tenant.id);
   if (result.error) return next(new AppError('VALIDATION_ERROR', result.error, 400));
@@ -397,12 +367,6 @@ api.delete('/teams/:id', requireAuth, authorize(['admin']), (req, res, next) => 
 
 api.get('/reviews', (req, res) => {
   res.json(reviewService.list(req.query, req.tenant.id));
-});
-
-api.get('/reviews/:id', validateParams(schemas.idParam), (req, res, next) => {
-  const review = reviewService.findById(req.validated.params.id, req.tenant.id);
-  if (!review) return next(new AppError('NOT_FOUND', 'Review not found', 404));
-  res.json(review);
 });
 
 api.post('/reviews', validateBody(schemas.reviewCreate), (req, res, next) => {
@@ -452,7 +416,6 @@ api.get('/metrics', (req, res) => {
 });
 
 app.use('/v1', api);
-app.use('/', api);
 
 app.use(errorHandler);
 
