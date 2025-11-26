@@ -1,0 +1,26 @@
+[
+  {
+    "id": "tmpl-welcome",
+    "tenantId": "main",
+    "type": "email",
+    "name": "Lead Welcome",
+    "subject": "Thanks for contacting Sewell Motorcoach!",
+    "body": "Hi {{name}}, thanks for your interest in {{unit}}. We'll reach you at {{email}}.",
+    "enabled": true,
+    "variants": [
+      { "id": "A", "weight": 0.5 },
+      { "id": "B", "weight": 0.5 }
+    ]
+  },
+  {
+    "id": "tmpl-followup-sms",
+    "tenantId": "main",
+    "type": "sms",
+    "name": "Follow Up",
+    "body": "Hi {{name}}, checking in about {{unit}}. Reply YES to schedule a showing.",
+    "enabled": true,
+    "variants": [
+      { "id": "A", "weight": 1 }
+    ]
+  }
+]

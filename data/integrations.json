@@ -1,0 +1,12 @@
+[
+  {
+    "id": "dms-hook-1",
+    "tenantId": "main",
+    "type": "dms",
+    "name": "Default DMS",
+    "url": "https://dms.example.com/api",
+    "status": "active",
+    "lastSyncAt": null,
+    "oemFeed": "forest-river"
+  }
+]

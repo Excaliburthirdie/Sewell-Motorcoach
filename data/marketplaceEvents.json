@@ -1,0 +1,12 @@
+[
+  {
+    "id": "mk-evt-1",
+    "tenantId": "main",
+    "marketplace": "rv-trader",
+    "inventoryId": "",
+    "type": "availability-sync",
+    "payload": {},
+    "status": "queued",
+    "createdAt": ""
+  }
+]

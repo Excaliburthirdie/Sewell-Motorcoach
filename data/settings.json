@@ -1,11 +1,14 @@
-{
-  "dealershipName": "Sewell Motorcoach",
-  "address": "2118 Danville Rd",
-  "city": "Harrodsburg",
-  "state": "KY",
-  "zip": "40330",
-  "country": "USA",
-  "currency": "USD",
-  "phone": "859-734-5566",
-  "email": "info@sewellmotorcoach.com"
-}
+[
+  {
+    "dealershipName": "Sewell Motorcoach",
+    "address": "2118 Danville Rd",
+    "city": "Harrodsburg",
+    "state": "KY",
+    "zip": "40330",
+    "country": "USA",
+    "currency": "USD",
+    "phone": "859-734-5566",
+    "email": "info@sewellmotorcoach.com",
+    "tenantId": "main"
+  }
+]

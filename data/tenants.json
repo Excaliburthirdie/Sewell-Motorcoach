@@ -1,0 +1,12 @@
+[
+  {
+    "id": "main",
+    "name": "Sewell Motorcoach Harrodsburg",
+    "location": "Harrodsburg, KY"
+  },
+  {
+    "id": "lexington",
+    "name": "Sewell Motorcoach Lexington",
+    "location": "Lexington, KY"
+  }
+]

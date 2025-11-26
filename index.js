@@ -4,72 +4,331 @@ const cors = require('cors');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 
+const config = require('./src/config');
+const { DATA_DIR } = require('./src/persistence/store');
+const capabilityService = require('./src/services/capabilityService');
+const inventoryService = require('./src/services/inventoryService');
+const mediaService = require('./src/services/mediaService');
+const teamService = require('./src/services/teamService');
+const reviewService = require('./src/services/reviewService');
+const leadService = require('./src/services/leadService');
+const settingsService = require('./src/services/settingsService');
+const authService = require('./src/services/authService');
+const importService = require('./src/services/importService');
+const integrationService = require('./src/services/integrationService');
+const serviceTicketService = require('./src/services/serviceTicketService');
+const { datasets, persist } = require('./src/services/state');
+const tenantService = require('./src/services/tenantService');
+const { sanitizeMiddleware } = require('./src/middleware/sanitize');
+const { validateBody, validateParams, validateQuery } = require('./src/middleware/validation');
+const { schemas } = require('./src/validation/schemas');
+const { z } = require('./src/validation/zodLite');
+const { AppError, errorHandler } = require('./src/middleware/errors');
+const { csrfProtection, ensureCsrfToken } = require('./src/middleware/csrf');
+const retentionService = require('./src/services/retentionService');
+const { maskForLogs, maskForResponse } = require('./src/services/pii');
+
+tenantService.initializeTenants();
+
 const app = express();
-const port = process.env.PORT || 3000;
-const DATA_DIR = `${__dirname}/data`;
-const VALID_LEAD_STATUSES = ['new', 'contacted', 'qualified', 'won', 'lost'];
+const port = config.server.port;
+const API_KEY = config.auth.apiKey;
+const RATE_LIMIT_WINDOW_MS = config.rateLimit.windowMs;
+const RATE_LIMIT_MAX = config.rateLimit.max;
+
+const rateLimitBuckets = new Map();
 
 app.use(bodyParser.json());
-app.use(cors());
+app.use(cors({ origin: true, credentials: true, exposedHeaders: ['X-Request-Id', 'X-CSRF-Token'] }));
+app.use(sanitizeMiddleware);
 
-// Shared helpers -----------------------------------------------------------
+// Core middleware stack ----------------------------------------------------
+app.use((req, res, next) => {
+  const requestId = req.headers['x-request-id'] || uuidv4();
+  req.requestId = requestId;
+  res.set('X-Request-Id', requestId);
+  next();
+});
 
-function loadData(file, defaultValue) {
+app.use((req, res, next) => {
+  const rawTenantId = req.headers['x-tenant-id'] || req.query.tenantId || (req.body && req.body.tenantId);
+  const resolved = tenantService.resolveTenantId(rawTenantId || tenantService.DEFAULT_TENANT_ID);
+  if (!resolved) {
+    return next(new AppError('TENANT_NOT_FOUND', 'Tenant not found', 404));
+  }
+  req.tenant = tenantService.getTenant(resolved);
+  return next();
+});
+
+app.use((req, res, next) => {
+  const startedAt = Date.now();
+  res.on('finish', () => {
+    const durationMs = Date.now() - startedAt;
+    const log = {
+      level: res.statusCode >= 500 ? 'error' : res.statusCode >= 400 ? 'warn' : 'info',
+      requestId: req.requestId,
+      method: req.method,
+      path: req.originalUrl,
+      status: res.statusCode,
+      durationMs
+    };
+    console.log(JSON.stringify(log));
+  });
+  next();
+});
+
+app.use((req, res, next) => {
+  if (config.server.enforceHttps && req.headers['x-forwarded-proto'] === 'http') {
+    return next(new AppError('HTTPS_REQUIRED', 'HTTPS is required', 400));
+  }
+  if (config.server.enforceHttps || req.headers['x-forwarded-proto'] === 'https') {
+    res.set('Strict-Transport-Security', `max-age=${config.server.hstsMaxAgeSeconds}; includeSubDomains`);
+  }
+  next();
+});
+
+app.use(csrfProtection);
+
+app.use((req, res, next) => {
+  const now = Date.now();
+  const bucket = (rateLimitBuckets.get(req.ip) || []).filter(timestamp => now - timestamp < RATE_LIMIT_WINDOW_MS);
+  bucket.push(now);
+  rateLimitBuckets.set(req.ip, bucket);
+
+  if (bucket.length > RATE_LIMIT_MAX) {
+    return next(new AppError('RATE_LIMIT_EXCEEDED', 'Rate limit exceeded', 429));
+  }
+  next();
+});
+
+// Utility helpers ----------------------------------------------------------
+function requireAuth(req, res, next) {
+  const header = req.headers.authorization || '';
+  const bearer = header.startsWith('Bearer ') ? header.slice(7) : null;
+
+  if (API_KEY && header === `Bearer ${API_KEY}`) {
+    req.user = { id: 'api-key', role: 'admin', username: 'api-key', authType: 'api-key', tenantId: req.tenant.id };
+    return next();
+  }
+
+  if (!bearer) {
+    return next(new AppError('UNAUTHORIZED', 'Unauthorized: missing bearer token', 401));
+  }
+
   try {
-    const data = fs.readFileSync(`${DATA_DIR}/${file}`, 'utf8');
-    return JSON.parse(data);
+    const payload = authService.verifyAccessToken(bearer);
+    if (req.tenant && payload.tenantId && payload.tenantId !== req.tenant.id) {
+      return next(new AppError('TENANT_MISMATCH', 'Token tenant does not match requested tenant', 403));
+    }
+    req.user = { id: payload.sub, username: payload.username, role: payload.role, authType: 'jwt', tenantId: payload.tenantId };
+    return next();
   } catch (err) {
-    return defaultValue;
+    return next(new AppError('UNAUTHORIZED', err.message || 'Unauthorized', 401));
   }
 }
 
-function saveData(file, data) {
-  fs.writeFileSync(`${DATA_DIR}/${file}`, JSON.stringify(data, null, 2));
+function authorize(allowedRoles = []) {
+  return (req, res, next) => {
+    if (!req.user || !req.user.role) {
+      return next(new AppError('FORBIDDEN', 'Forbidden: missing user context', 403));
+    }
+    if (!allowedRoles.includes(req.user.role)) {
+      return next(new AppError('FORBIDDEN', 'Forbidden: insufficient role', 403));
+    }
+    return next();
+  };
 }
 
-function respondNotFound(res, entity = 'Resource') {
-  return res.status(404).json({ message: `${entity} not found` });
+function auditChange(req, action, entity, payload, metadata = {}) {
+  const auditPayload = maskForLogs(payload, {
+    enabled: config.pii.maskLogs,
+    replacement: config.pii.replacement,
+    sensitiveKeys: config.pii.sensitiveKeys
+  });
+  const auditMetadata = maskForLogs(metadata, {
+    enabled: config.pii.maskLogs,
+    replacement: config.pii.replacement,
+    sensitiveKeys: config.pii.sensitiveKeys
+  });
+  const auditRecord = {
+    timestamp: new Date().toISOString(),
+    requestId: requestId(req),
+    tenantId: req.tenant?.id,
+    user: req.user ? { id: req.user.id, role: req.user.role, username: req.user.username } : undefined,
+    ip: req.ip,
+    action,
+    entity,
+    payload: auditPayload,
+    metadata: auditMetadata
+  };
+  fs.appendFile(`${DATA_DIR}/audit.log`, `${JSON.stringify(auditRecord)}\n`, () => {});
 }
 
-function validateFields(payload, requiredFields = []) {
-  const missing = requiredFields.filter(field => payload[field] === undefined || payload[field] === null || payload[field] === '');
-  if (missing.length) {
-    return `${missing.join(', ')} ${missing.length === 1 ? 'is' : 'are'} required`;
+function hasPriceChange(previous, updated) {
+  if (!previous || !updated) return false;
+  const basicFields = ['price', 'msrp', 'salePrice', 'rebates', 'taxes'];
+  const feesChanged = JSON.stringify(previous.fees || []) !== JSON.stringify(updated.fees || []);
+  return basicFields.some(field => previous[field] !== updated[field]) || feesChanged;
+}
+
+function auditPricingChange(req, previous, updated) {
+  if (!hasPriceChange(previous, updated)) return;
+  auditChange(
+    req,
+    'pricing_change',
+    'inventory',
+    {
+      id: updated.id,
+      stockNumber: updated.stockNumber,
+      previousPrice: previous.price,
+      newPrice: updated.price,
+      previousMsrp: previous.msrp,
+      newMsrp: updated.msrp,
+      previousSalePrice: previous.salePrice,
+      newSalePrice: updated.salePrice,
+      previousRebates: previous.rebates,
+      newRebates: updated.rebates,
+      previousTaxes: previous.taxes,
+      newTaxes: updated.taxes,
+      previousFees: previous.fees,
+      newFees: updated.fees
+    },
+    { changeType: 'sensitive_pricing' }
+  );
+}
+
+function maskForExport(data, req) {
+  const shouldMask = config.pii.maskExports || req.headers['x-mask-pii'] === 'true';
+  const queryMask = req.validated?.query && req.validated.query.maskPII;
+  const enabled = shouldMask || Boolean(queryMask);
+  return maskForResponse(data, {
+    enabled,
+    replacement: config.pii.replacement,
+    sensitiveKeys: config.pii.sensitiveKeys
+  });
+}
+
+function requestId(req) {
+  return req.requestId || 'unknown';
+}
+
+function notFound(entity = 'Resource') {
+  return new AppError('NOT_FOUND', `${entity} not found`, 404);
+}
+
+capabilityService.normalizeCapabilities();
+retentionService.scheduleRetention(config, datasets, persist);
+
+const api = express.Router();
+
+/*
+  AUTH ROUTES
+  Provides JWT-based session management with refresh token rotation. Use
+  POST /auth/login to obtain tokens and POST /auth/refresh to rotate
+  refresh tokens. Bearer tokens are required for protected endpoints.
+*/
+api.post('/auth/login', validateBody(schemas.authLogin), (req, res, next) => {
+  const { username, password, tenantId } = req.validated.body;
+  const tenant = tenantService.resolveTenantId(tenantId || req.tenant?.id);
+  if (!tenant) {
+    return next(new AppError('TENANT_NOT_FOUND', 'Tenant not found for login', 404));
   }
-  return null;
-}
-
-function clampNumber(value, fallback) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
-}
-
-function sanitizeBoolean(value, fallback = false) {
-  if (typeof value === 'boolean') return value;
-  if (typeof value === 'string') return value.toLowerCase() === 'true';
-  return fallback;
-}
-
-// Load initial data from JSON files or defaults.
-let inventory = loadData('inventory.json', []);
-let teams = loadData('teams.json', []);
-let reviews = loadData('reviews.json', []);
-let leads = loadData('leads.json', []);
-let settings = loadData('settings.json', {
-  dealershipName: 'Sewell Motorcoach',
-  address: '2118 Danville Rd',
-  city: 'Harrodsburg',
-  state: 'KY',
-  zip: '40330',
-  country: 'USA',
-  currency: 'USD',
-  phone: '859-734-5566',
-  email: 'sales@sewellmotorcoach.com',
-  hours: {
-    weekday: '9:00 AM - 6:00 PM',
-    saturday: '10:00 AM - 4:00 PM',
-    sunday: 'Closed'
+  const result = authService.authenticate(username, password, tenant);
+  if (!result) {
+    return next(new AppError('UNAUTHORIZED', 'Invalid username or password', 401));
   }
+  res.json({
+    user: { ...result.user, tenantId: tenant },
+    accessToken: result.tokens.accessToken,
+    refreshToken: result.tokens.refreshToken,
+    tokenType: 'Bearer',
+    expiresInSeconds: Number(process.env.ACCESS_TOKEN_TTL_SECONDS || 900)
+  });
+});
+
+api.post('/auth/refresh', validateBody(schemas.authRefresh), (req, res, next) => {
+  try {
+    const { tokens, user } = authService.rotateRefresh(req.validated.body.refreshToken);
+    if (req.tenant && user.tenantId && user.tenantId !== req.tenant.id) {
+      return next(new AppError('TENANT_MISMATCH', 'Refresh token tenant does not match requested tenant', 403));
+    }
+    res.json({
+      user,
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      tokenType: 'Bearer',
+      expiresInSeconds: Number(process.env.ACCESS_TOKEN_TTL_SECONDS || 900)
+    });
+  } catch (err) {
+    return next(new AppError('UNAUTHORIZED', err.message || 'Invalid refresh token', 401));
+  }
+});
+
+api.post('/auth/logout', validateBody(schemas.authRefresh), (req, res, next) => {
+  try {
+    const record = authService.revokeRefreshToken(req.validated.body.refreshToken);
+    if (req.tenant && record.tenantId && record.tenantId !== req.tenant.id) {
+      return next(new AppError('TENANT_MISMATCH', 'Refresh token tenant does not match requested tenant', 403));
+    }
+    res.json({ success: true });
+  } catch (err) {
+    return next(new AppError('UNAUTHORIZED', err.message || 'Invalid refresh token', 401));
+  }
+});
+
+api.get('/auth/me', requireAuth, (req, res) => {
+  res.json({ user: { ...req.user, tenantId: req.tenant?.id }, authenticatedAt: new Date().toISOString() });
+});
+
+/*
+  CAPABILITY ROUTES
+  Provide a machine-readable version of the 100 must-have capabilities
+  outlined in the README so other services and front-ends can consume
+  the checklist directly from the API.
+*/
+api.get('/capabilities', validateQuery(schemas.capabilityListQuery), (req, res) => {
+  res.json(capabilityService.list(req.validated.query));
+});
+
+api.get('/capabilities/:id', validateParams(schemas.idParam), (req, res, next) => {
+  const id = Number(req.validated.params.id);
+  const capability = capabilityService.getById(id);
+  if (!capability) {
+    return next(notFound('Capability'));
+  }
+  res.json(capability);
+});
+
+api.get('/capabilities/status', (req, res) => {
+  res.json(capabilityService.status());
+});
+
+api.get('/csrf', (req, res) => {
+  const token = ensureCsrfToken(req, res);
+  res.json({ csrfToken: token });
+});
+
+api.get('/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    uptimeSeconds: process.uptime(),
+    requestId: requestId(req)
+  });
+});
+
+api.get('/metrics', (req, res) => {
+  res.json({
+    counts: {
+      inventory: tenantService.scopedCollection(datasets.inventory, req.tenant.id).length,
+      teams: tenantService.scopedCollection(datasets.teams, req.tenant.id).length,
+      reviews: tenantService.scopedCollection(datasets.reviews, req.tenant.id).length,
+      leads: tenantService.scopedCollection(datasets.leads, req.tenant.id).length,
+      capabilities: datasets.capabilities.length,
+      customers: tenantService.scopedCollection(datasets.customers, req.tenant.id).length,
+      serviceTickets: tenantService.scopedCollection(datasets.serviceTickets, req.tenant.id).length,
+      financeOffers: tenantService.scopedCollection(datasets.financeOffers, req.tenant.id).length
+    }
+  });
 });
 
 /*
@@ -79,153 +338,242 @@ let settings = loadData('settings.json', {
   condition (e.g. New, Used), msrp, price, salePrice, location,
   daysOnLot, images array and featured boolean.
 */
-app.get('/inventory', (req, res) => {
-  const {
-    industry,
-    category,
-    subcategory,
-    condition,
-    location,
-    featured,
-    minPrice,
-    maxPrice,
-    search,
-    sortBy = 'createdAt',
-    sortDir = 'desc',
-    limit,
-    offset
-  } = req.query;
-
-  const filtered = inventory
-    .filter(unit => !industry || unit.industry === industry)
-    .filter(unit => !category || unit.category === category)
-    .filter(unit => !subcategory || unit.subcategory === subcategory)
-    .filter(unit => !condition || unit.condition === condition)
-    .filter(unit => !location || unit.location === location)
-    .filter(unit =>
-      featured === undefined ? true : sanitizeBoolean(featured) === Boolean(unit.featured)
-    )
-    .filter(unit =>
-      minPrice ? Number(unit.price) >= clampNumber(minPrice, Number(unit.price)) : true
-    )
-    .filter(unit =>
-      maxPrice ? Number(unit.price) <= clampNumber(maxPrice, Number(unit.price)) : true
-    )
-    .filter(unit => {
-      if (!search) return true;
-      const term = search.toLowerCase();
-      return [
-        unit.stockNumber,
-        unit.name,
-        unit.category,
-        unit.subcategory,
-        unit.location
-      ]
-        .filter(Boolean)
-        .some(value => value.toLowerCase().includes(term));
-    });
-
-  const sorted = [...filtered].sort((a, b) => {
-    const direction = sortDir === 'asc' ? 1 : -1;
-    if (sortBy === 'price') return (Number(a.price) - Number(b.price)) * direction;
-    if (sortBy === 'msrp') return (Number(a.msrp) - Number(b.msrp)) * direction;
-    if (sortBy === 'daysOnLot') return (Number(a.daysOnLot) - Number(b.daysOnLot)) * direction;
-    const aDate = new Date(a.createdAt || 0).getTime();
-    const bDate = new Date(b.createdAt || 0).getTime();
-    return (aDate - bDate) * direction;
-  });
-
-  const start = clampNumber(offset, 0);
-  const end = limit ? start + clampNumber(limit, filtered.length) : filtered.length;
-
-  res.json({
-    total: sorted.length,
-    items: sorted.slice(start, end)
-  });
+api.get('/inventory', validateQuery(schemas.inventoryListQuery), (req, res) => {
+  res.json(inventoryService.list(req.validated.query, req.tenant.id));
 });
 
-app.get('/inventory/:id', (req, res) => {
-  const unit = inventory.find(u => u.id === req.params.id);
+api.get('/inventory/:id', validateParams(schemas.idParam), (req, res, next) => {
+  const unit = inventoryService.findById(req.validated.params.id, req.tenant.id);
   if (!unit) {
-    return res.status(404).json({ message: 'Unit not found' });
+    return next(notFound('Unit'));
   }
   res.json(unit);
 });
 
-app.post('/inventory', (req, res) => {
-  const requiredError = validateFields(req.body, ['stockNumber', 'name', 'condition', 'price']);
-  if (requiredError) {
-    return res.status(400).json({ message: requiredError });
+api.get('/inventory/:id/media', validateParams(schemas.idParam), (req, res, next) => {
+  const { media, notFound } = mediaService.listForUnit(req.validated.params.id, req.tenant.id);
+  if (notFound) return next(notFound('Unit'));
+  res.json({ items: media });
+});
+
+api.post('/inventory', requireAuth, authorize(['admin', 'sales']), validateBody(schemas.inventoryCreate), (req, res, next) => {
+  const { unit, error } = inventoryService.create(req.validated.body, req.tenant.id);
+  if (error) {
+    return next(new AppError('VALIDATION_ERROR', error, 400));
   }
-
-  const unit = {
-    id: uuidv4(),
-    featured: sanitizeBoolean(req.body.featured, false),
-    createdAt: new Date().toISOString(),
-    images: Array.isArray(req.body.images) ? req.body.images : [],
-    ...req.body
-  };
-
-  inventory.push(unit);
-  saveData('inventory.json', inventory);
+  auditChange(req, 'create', 'inventory', unit);
   res.status(201).json(unit);
 });
 
-app.put('/inventory/:id', (req, res) => {
-  const index = inventory.findIndex(u => u.id === req.params.id);
-  if (index === -1) {
-    return respondNotFound(res, 'Unit');
+api.put('/inventory/:id', requireAuth, authorize(['admin', 'sales']), validateParams(schemas.idParam), validateBody(schemas.inventoryUpdate), (req, res, next) => {
+  const { unit, previous, notFound: missing } = inventoryService.update(
+    req.validated.params.id,
+    req.validated.body,
+    req.tenant.id
+  );
+  if (missing) {
+    return next(notFound('Unit'));
   }
-
-  const updated = {
-    ...inventory[index],
-    ...req.body,
-    featured: sanitizeBoolean(req.body.featured, inventory[index].featured)
-  };
-
-  inventory[index] = updated;
-  saveData('inventory.json', inventory);
-  res.json(updated);
+  auditChange(req, 'update', 'inventory', unit);
+  auditPricingChange(req, previous, unit);
+  res.json(unit);
 });
 
-app.patch('/inventory/:id/feature', (req, res) => {
-  const index = inventory.findIndex(u => u.id === req.params.id);
-  if (index === -1) {
-    return respondNotFound(res, 'Unit');
+api.post(
+  '/inventory/:id/media',
+  requireAuth,
+  authorize(['admin', 'sales']),
+  validateParams(schemas.idParam),
+  validateBody(schemas.inventoryMediaCreate),
+  (req, res, next) => {
+    const { media, notFound: missing } = mediaService.addMedia(req.validated.params.id, req.validated.body, req.tenant.id);
+    if (missing) return next(notFound('Unit'));
+    auditChange(req, 'update', 'inventory', { media });
+    res.status(201).json(media);
   }
+);
 
-  const featured = sanitizeBoolean(req.body.featured, true);
-  inventory[index] = { ...inventory[index], featured };
-  saveData('inventory.json', inventory);
-  res.json(inventory[index]);
+api.patch('/inventory/:id/feature', requireAuth, authorize(['admin', 'sales']), validateParams(schemas.idParam), validateBody(schemas.inventoryFeatureUpdate), (req, res, next) => {
+  const { unit, notFound: missing } = inventoryService.setFeatured(
+    req.validated.params.id,
+    req.validated.body.featured,
+    req.tenant.id
+  );
+  if (missing) {
+    return next(notFound('Unit'));
+  }
+  auditChange(req, 'update', 'inventory', unit);
+  res.json(unit);
 });
 
-app.delete('/inventory/:id', (req, res) => {
-  const index = inventory.findIndex(u => u.id === req.params.id);
-  if (index === -1) {
-    return respondNotFound(res, 'Unit');
+api.delete(
+  '/inventory/:id/media/:mediaId',
+  requireAuth,
+  authorize(['admin', 'sales']),
+  validateParams(z.object({ id: z.string().trim(), mediaId: z.string().trim() })),
+  (req, res, next) => {
+    const { removed, notFound: missing } = mediaService.removeMedia(
+      req.validated.params.id,
+      req.validated.params.mediaId,
+      req.tenant.id
+    );
+    if (missing) return next(notFound('Media'));
+    auditChange(req, 'update', 'inventory', { removed });
+    res.json({ removed });
   }
-  const removed = inventory.splice(index, 1);
-  saveData('inventory.json', inventory);
-  res.json(removed[0]);
+);
+
+api.patch(
+  '/inventory/:id/location',
+  requireAuth,
+  authorize(['admin', 'sales']),
+  validateParams(schemas.idParam),
+  validateBody(schemas.inventoryLocationUpdate),
+  (req, res, next) => {
+    const { unit, previous, notFound: missing } = inventoryService.updateLocation(
+      req.validated.params.id,
+      req.validated.body,
+      req.tenant.id
+    );
+    if (missing) {
+      return next(notFound('Unit'));
+    }
+    auditChange(req, 'update', 'inventory', unit, { previous });
+    res.json(unit);
+  }
+);
+
+api.patch(
+  '/inventory/:id/hold',
+  requireAuth,
+  authorize(['admin', 'sales']),
+  validateParams(schemas.idParam),
+  validateBody(schemas.inventoryHoldUpdate),
+  (req, res, next) => {
+    const { unit, previous, notFound: missing } = inventoryService.setHold(
+      req.validated.params.id,
+      req.validated.body,
+      req.tenant.id
+    );
+    if (missing) {
+      return next(notFound('Unit'));
+    }
+    auditChange(req, 'update', 'inventory', unit, { previous });
+    res.json(unit);
+  }
+);
+
+api.patch(
+  '/inventory/:id/transfer',
+  requireAuth,
+  authorize(['admin', 'sales']),
+  validateParams(schemas.idParam),
+  validateBody(schemas.inventoryTransferUpdate),
+  (req, res, next) => {
+    const { unit, previous, notFound: missing } = inventoryService.updateTransfer(
+      req.validated.params.id,
+      req.validated.body,
+      req.tenant.id
+    );
+    if (missing) {
+      return next(notFound('Unit'));
+    }
+    auditChange(req, 'update', 'inventory', unit, { previous });
+    res.json(unit);
+  }
+);
+
+api.patch(
+  '/inventory/:id/workflows',
+  requireAuth,
+  authorize(['admin', 'sales']),
+  validateParams(schemas.idParam),
+  validateBody(schemas.inventoryWorkflowUpdate),
+  (req, res, next) => {
+    const { unit, notFound: missing } = inventoryService.updateWorkflow(
+      req.validated.params.id,
+      req.validated.body,
+      req.tenant.id
+    );
+    if (missing) return next(notFound('Unit'));
+    auditChange(req, 'update', 'inventory', unit);
+    res.json(unit);
+  }
+);
+
+api.delete('/inventory/:id', requireAuth, authorize(['admin']), validateParams(schemas.idParam), (req, res, next) => {
+  const { unit, notFound: missing } = inventoryService.remove(req.validated.params.id, req.tenant.id);
+  if (missing) {
+    return next(notFound('Unit'));
+  }
+  auditChange(req, 'delete', 'inventory', unit);
+  res.json(unit);
 });
 
-app.get('/inventory/stats', (req, res) => {
-  const byCondition = inventory.reduce((acc, unit) => {
-    acc[unit.condition] = (acc[unit.condition] || 0) + 1;
-    return acc;
-  }, {});
+api.get('/inventory/stats', (req, res) => {
+  res.json(inventoryService.stats(req.tenant.id));
+});
 
-  const averagePrice =
-    inventory.length > 0
-      ? inventory.reduce((sum, unit) => sum + Number(unit.price || 0), 0) / inventory.length
-      : 0;
+api.post('/inventory/import', requireAuth, authorize(['admin']), validateBody(schemas.csvImport), (req, res) => {
+  const created = importService.importInventory(req.validated.body.csv, req.tenant.id);
+  res.status(201).json({ imported: created.length, items: created });
+});
 
-  res.json({
-    totalUnits: inventory.length,
-    byCondition,
-    averagePrice
-  });
+api.get('/inventory/export', requireAuth, authorize(['admin']), (req, res) => {
+  const csv = importService.exportInventory(req.tenant.id);
+  res.set('Content-Type', 'text/csv');
+  res.send(csv);
+});
+
+/*
+  INTEGRATIONS AND MARKETPLACES
+  Hooks for DMS/OEM feeds and marketplace availability sync events.
+*/
+api.get('/integrations', requireAuth, authorize(['admin']), (req, res) => {
+  res.json(integrationService.listIntegrations(req.tenant.id));
+});
+
+api.post('/integrations/dms', requireAuth, authorize(['admin']), validateBody(schemas.integrationRecord), (req, res) => {
+  const record = integrationService.recordDmsSync(req.validated.body, req.tenant.id);
+  res.status(201).json(record);
+});
+
+api.post('/integrations/oem', requireAuth, authorize(['admin']), validateBody(schemas.integrationRecord), (req, res) => {
+  const record = integrationService.recordOemFeed(req.validated.body, req.tenant.id);
+  res.status(201).json(record);
+});
+
+api.get('/marketplaces/events', requireAuth, authorize(['admin', 'sales']), (req, res) => {
+  res.json(tenantService.scopedCollection(datasets.marketplaceEvents, req.tenant.id));
+});
+
+api.post('/marketplaces/events', requireAuth, authorize(['admin', 'sales']), validateBody(schemas.marketplaceEvent), (req, res) => {
+  const record = integrationService.queueMarketplaceEvent(req.validated.body, req.tenant.id);
+  res.status(201).json(record);
+});
+
+api.patch('/marketplaces/events/:id', requireAuth, authorize(['admin', 'sales']), validateParams(schemas.idParam), (req, res, next) => {
+  const { event, notFound: missing } = integrationService.completeMarketplaceEvent(
+    req.validated.params.id,
+    req.body.status || 'completed',
+    req.tenant.id
+  );
+  if (missing) return next(notFound('Event'));
+  res.json(event);
+});
+
+/*
+  SERVICE SCHEDULING
+  Manage pre-delivery inspections, warranty jobs and delivery slots.
+*/
+api.post('/service/schedule', requireAuth, authorize(['admin', 'service', 'sales']), validateBody(schemas.serviceSchedule), (req, res) => {
+  const ticket = serviceTicketService.schedule(req.validated.body, req.tenant.id);
+  auditChange(req, 'create', 'serviceTicket', ticket);
+  res.status(201).json(ticket);
+});
+
+api.get('/service/schedule', requireAuth, authorize(['admin', 'service', 'sales']), (req, res) => {
+  res.json(serviceTicketService.list(req.query, req.tenant.id));
 });
 
 /*
@@ -233,72 +581,51 @@ app.get('/inventory/stats', (req, res) => {
   Each team has an id, name and an array of members. Each member has
   firstName, lastName, jobRole, biography and optional socialLinks array.
 */
-app.get('/teams', (req, res) => {
-  res.json(teams);
+api.get('/teams', (req, res) => {
+  res.json(teamService.list(req.tenant.id));
 });
 
-app.get('/teams/:id', (req, res) => {
-  const team = teams.find(t => t.id === req.params.id);
+api.get('/teams/:id', validateParams(schemas.idParam), (req, res, next) => {
+  const team = teamService.findById(req.validated.params.id, req.tenant.id);
   if (!team) {
-    return res.status(404).json({ message: 'Team not found' });
+    return next(notFound('Team'));
   }
   res.json(team);
 });
 
-app.post('/teams', (req, res) => {
-  const requiredError = validateFields(req.body, ['name']);
-  if (requiredError) {
-    return res.status(400).json({ message: requiredError });
+api.post('/teams', requireAuth, authorize(['admin', 'marketing']), validateBody(schemas.teamCreate), (req, res, next) => {
+  const { team, error } = teamService.create(req.validated.body, req.tenant.id);
+  if (error) {
+    return next(new AppError('VALIDATION_ERROR', error, 400));
   }
-
-  const members = Array.isArray(req.body.members)
-    ? req.body.members.map(member => ({
-        ...member,
-        socialLinks: Array.isArray(member.socialLinks) ? member.socialLinks : []
-      }))
-    : [];
-
-  const team = { id: uuidv4(), members, ...req.body };
-  teams.push(team);
-  saveData('teams.json', teams);
+  auditChange(req, 'create', 'team', team);
   res.status(201).json(team);
 });
 
-app.put('/teams/:id', (req, res) => {
-  const index = teams.findIndex(t => t.id === req.params.id);
-  if (index === -1) {
-    return respondNotFound(res, 'Team');
+api.put('/teams/:id', requireAuth, authorize(['admin', 'marketing']), validateParams(schemas.idParam), validateBody(schemas.teamUpdate), (req, res, next) => {
+  const { team, notFound: missing } = teamService.update(
+    req.validated.params.id,
+    req.validated.body,
+    req.tenant.id
+  );
+  if (missing) {
+    return next(notFound('Team'));
   }
-  const members = Array.isArray(req.body.members)
-    ? req.body.members.map(member => ({
-        ...member,
-        socialLinks: Array.isArray(member.socialLinks) ? member.socialLinks : []
-      }))
-    : teams[index].members;
-
-  teams[index] = { ...teams[index], ...req.body, members };
-  saveData('teams.json', teams);
-  res.json(teams[index]);
+  auditChange(req, 'update', 'team', team);
+  res.json(team);
 });
 
-app.delete('/teams/:id', (req, res) => {
-  const index = teams.findIndex(t => t.id === req.params.id);
-  if (index === -1) {
-    return respondNotFound(res, 'Team');
+api.delete('/teams/:id', requireAuth, authorize(['admin', 'marketing']), validateParams(schemas.idParam), (req, res, next) => {
+  const { team, notFound: missing } = teamService.remove(req.validated.params.id, req.tenant.id);
+  if (missing) {
+    return next(notFound('Team'));
   }
-  const removed = teams.splice(index, 1);
-  saveData('teams.json', teams);
-  res.json(removed[0]);
+  auditChange(req, 'delete', 'team', team);
+  res.json(team);
 });
 
-app.get('/teams/roles', (req, res) => {
-  const roles = new Set();
-  teams.forEach(team => {
-    team.members?.forEach(member => {
-      if (member.jobRole) roles.add(member.jobRole);
-    });
-  });
-  res.json({ roles: Array.from(roles) });
+api.get('/teams/roles', (req, res) => {
+  res.json({ roles: teamService.roles(req.tenant.id) });
 });
 
 /*
@@ -306,100 +633,67 @@ app.get('/teams/roles', (req, res) => {
   Reviews represent customer testimonials. Each review has id,
   name, rating (number between 1 and 5), content and visibility boolean.
 */
-app.get('/reviews', (req, res) => {
-  res.json(reviews);
+api.get('/reviews', (req, res) => {
+  res.json(reviewService.list(req.tenant.id));
 });
 
-app.get('/reviews/:id', (req, res) => {
-  const review = reviews.find(r => r.id === req.params.id);
+api.get('/reviews/:id', validateParams(schemas.idParam), (req, res, next) => {
+  const review = reviewService.findById(req.validated.params.id, req.tenant.id);
   if (!review) {
-    return res.status(404).json({ message: 'Review not found' });
+    return next(notFound('Review'));
   }
   res.json(review);
 });
 
-app.post('/reviews', (req, res) => {
-  const requiredError = validateFields(req.body, ['name', 'rating', 'content']);
-  if (requiredError) {
-    return res.status(400).json({ message: requiredError });
+api.post('/reviews', requireAuth, authorize(['admin', 'marketing']), validateBody(schemas.reviewCreate), (req, res, next) => {
+  const { review, error } = reviewService.create(req.validated.body, req.tenant.id);
+  if (error) {
+    return next(new AppError('VALIDATION_ERROR', error, 400));
   }
-
-  const rating = clampNumber(req.body.rating, 0);
-  if (rating < 1 || rating > 5) {
-    return res.status(400).json({ message: 'Rating must be between 1 and 5' });
-  }
-
-  const review = {
-    id: uuidv4(),
-    visible: sanitizeBoolean(req.body.visible, true),
-    createdAt: new Date().toISOString(),
-    rating,
-    ...req.body
-  };
-
-  reviews.push(review);
-  saveData('reviews.json', reviews);
+  auditChange(req, 'create', 'review', review);
   res.status(201).json(review);
 });
 
-app.put('/reviews/:id', (req, res) => {
-  const index = reviews.findIndex(r => r.id === req.params.id);
-  if (index === -1) {
-    return respondNotFound(res, 'Review');
+api.put('/reviews/:id', requireAuth, authorize(['admin', 'marketing']), validateParams(schemas.idParam), validateBody(schemas.reviewUpdate), (req, res, next) => {
+  const { review, error, notFound: missing } = reviewService.update(
+    req.validated.params.id,
+    req.validated.body,
+    req.tenant.id
+  );
+  if (missing) {
+    return next(notFound('Review'));
   }
-
-  const rating = req.body.rating ? clampNumber(req.body.rating, reviews[index].rating) : reviews[index].rating;
-  if (rating < 1 || rating > 5) {
-    return res.status(400).json({ message: 'Rating must be between 1 and 5' });
+  if (error) {
+    return next(new AppError('VALIDATION_ERROR', error, 400));
   }
-
-  reviews[index] = {
-    ...reviews[index],
-    ...req.body,
-    rating,
-    visible: sanitizeBoolean(req.body.visible, reviews[index].visible)
-  };
-  saveData('reviews.json', reviews);
-  res.json(reviews[index]);
+  auditChange(req, 'update', 'review', review);
+  res.json(review);
 });
 
-app.patch('/reviews/:id/visibility', (req, res) => {
-  const index = reviews.findIndex(r => r.id === req.params.id);
-  if (index === -1) {
-    return respondNotFound(res, 'Review');
+api.patch('/reviews/:id/visibility', requireAuth, authorize(['admin', 'marketing']), validateParams(schemas.idParam), validateBody(schemas.reviewVisibilityUpdate), (req, res, next) => {
+  const { review, notFound: missing } = reviewService.toggleVisibility(
+    req.validated.params.id,
+    req.validated.body.visible,
+    req.tenant.id
+  );
+  if (missing) {
+    return next(notFound('Review'));
   }
-
-  reviews[index] = {
-    ...reviews[index],
-    visible: sanitizeBoolean(req.body.visible, !reviews[index].visible)
-  };
-  saveData('reviews.json', reviews);
-  res.json(reviews[index]);
+  auditChange(req, 'update', 'review', review);
+  res.json(review);
 });
 
-app.delete('/reviews/:id', (req, res) => {
-  const index = reviews.findIndex(r => r.id === req.params.id);
-  if (index === -1) {
-    return respondNotFound(res, 'Review');
+api.delete('/reviews/:id', requireAuth, authorize(['admin', 'marketing']), validateParams(schemas.idParam), (req, res, next) => {
+  const { review, notFound: missing } = reviewService.remove(req.validated.params.id, req.tenant.id);
+  if (missing) {
+    return next(notFound('Review'));
   }
-  const removed = reviews.splice(index, 1);
-  saveData('reviews.json', reviews);
-  res.json(removed[0]);
+  auditChange(req, 'delete', 'review', review);
+  res.json(review);
 });
 
-app.get('/reviews/summary', (req, res) => {
-  const visibleReviews = reviews.filter(r => r.visible !== false);
-  const averageRating =
-    visibleReviews.length > 0
-      ? visibleReviews.reduce((sum, review) => sum + Number(review.rating || 0), 0) /
-        visibleReviews.length
-      : 0;
-
-  res.json({
-    total: reviews.length,
-    visible: visibleReviews.length,
-    averageRating
-  });
+api.get('/reviews/summary', (req, res) => {
+  res.json(reviewService.summary(req.tenant.id));
 });
 
 /*
@@ -407,85 +701,158 @@ app.get('/reviews/summary', (req, res) => {
   Leads represent submissions from contact forms. Each lead has id,
   name, email, subject, message and createdAt timestamp.
 */
-app.get('/leads/:id', (req, res) => {
-  const lead = leads.find(l => l.id === req.params.id);
+api.post('/leads/capture', validateBody(schemas.leadCreate), (req, res, next) => {
+  const { lead, error } = leadService.capture(req.validated.body, req.tenant.id);
+  if (error) {
+    return next(new AppError('VALIDATION_ERROR', error, 400));
+  }
+  auditChange(req, 'create', 'lead', lead);
+  res.status(201).json(maskForExport(lead, req));
+});
+
+api.get('/leads/:id', validateParams(schemas.idParam), (req, res, next) => {
+  const lead = leadService.findById(req.validated.params.id, req.tenant.id);
   if (!lead) {
-    return res.status(404).json({ message: 'Lead not found' });
+    return next(notFound('Lead'));
   }
-  res.json(lead);
+  res.json(maskForExport(lead, req));
 });
 
-app.post('/leads', (req, res) => {
-  const requiredError = validateFields(req.body, ['name', 'email', 'message']);
-  if (requiredError) {
-    return res.status(400).json({ message: requiredError });
+api.post('/leads', requireAuth, authorize(['admin', 'sales', 'marketing']), validateBody(schemas.leadCreate), (req, res, next) => {
+  const { lead, error } = leadService.create(req.validated.body, req.tenant.id);
+  if (error) {
+    return next(new AppError('VALIDATION_ERROR', error, 400));
   }
-
-  const lead = {
-    id: uuidv4(),
-    createdAt: new Date().toISOString(),
-    status: VALID_LEAD_STATUSES.includes(req.body.status) ? req.body.status : 'new',
-    subject: req.body.subject || 'General inquiry',
-    ...req.body
-  };
-  leads.push(lead);
-  saveData('leads.json', leads);
-  res.status(201).json(lead);
+  auditChange(req, 'create', 'lead', lead);
+  res.status(201).json(maskForExport(lead, req));
 });
 
-app.put('/leads/:id', (req, res) => {
-  const index = leads.findIndex(l => l.id === req.params.id);
-  if (index === -1) {
-    return respondNotFound(res, 'Lead');
+api.put('/leads/:id', requireAuth, authorize(['admin', 'sales', 'marketing']), validateParams(schemas.idParam), validateBody(schemas.leadUpdate), (req, res, next) => {
+  const { lead, notFound: missing } = leadService.update(
+    req.validated.params.id,
+    req.validated.body,
+    req.tenant.id
+  );
+  if (missing) {
+    return next(notFound('Lead'));
   }
-
-  const status = req.body.status && VALID_LEAD_STATUSES.includes(req.body.status)
-    ? req.body.status
-    : leads[index].status;
-
-  leads[index] = { ...leads[index], ...req.body, status };
-  saveData('leads.json', leads);
-  res.json(leads[index]);
+  auditChange(req, 'update', 'lead', lead);
+  res.json(maskForExport(lead, req));
 });
 
-app.patch('/leads/:id/status', (req, res) => {
-  const index = leads.findIndex(l => l.id === req.params.id);
-  if (index === -1) {
-    return respondNotFound(res, 'Lead');
+api.patch('/leads/:id/status', requireAuth, authorize(['admin', 'sales', 'marketing']), validateParams(schemas.idParam), validateBody(schemas.leadStatusUpdate), (req, res, next) => {
+  const { lead, error, notFound: missing } = leadService.setStatus(
+    req.validated.params.id,
+    req.validated.body.status,
+    req.tenant.id
+  );
+  if (missing) {
+    return next(notFound('Lead'));
   }
-
-  if (!VALID_LEAD_STATUSES.includes(req.body.status)) {
-    return res.status(400).json({ message: `Status must be one of: ${VALID_LEAD_STATUSES.join(', ')}` });
+  if (error) {
+    return next(new AppError('VALIDATION_ERROR', error, 400));
   }
-
-  leads[index] = { ...leads[index], status: req.body.status };
-  saveData('leads.json', leads);
-  res.json(leads[index]);
+  auditChange(req, 'update', 'lead', lead);
+  res.json(maskForExport(lead, req));
 });
 
-app.delete('/leads/:id', (req, res) => {
-  const index = leads.findIndex(l => l.id === req.params.id);
-  if (index === -1) {
-    return respondNotFound(res, 'Lead');
+api.post(
+  '/leads/:id/enrich',
+  requireAuth,
+  authorize(['admin', 'sales', 'marketing']),
+  validateParams(schemas.idParam),
+  validateBody(schemas.leadEnrichment),
+  (req, res, next) => {
+    const { lead, notFound: missing } = leadService.enrich(req.validated.params.id, req.validated.body, req.tenant.id);
+    if (missing) return next(notFound('Lead'));
+    auditChange(req, 'update', 'lead', lead);
+    res.json(maskForExport(lead, req));
   }
-  const removed = leads.splice(index, 1);
-  saveData('leads.json', leads);
-  res.json(removed[0]);
+);
+
+api.post(
+  '/leads/:id/assign',
+  requireAuth,
+  authorize(['admin', 'sales']),
+  validateParams(schemas.idParam),
+  validateBody(schemas.leadAssignment),
+  (req, res, next) => {
+    const { lead, notFound: missing } = leadService.assign(req.validated.params.id, req.validated.body, req.tenant.id);
+    if (missing) return next(notFound('Lead'));
+    auditChange(req, 'update', 'lead', lead);
+    res.json(maskForExport(lead, req));
+  }
+);
+
+api.post('/leads/:id/score', requireAuth, authorize(['admin', 'sales', 'marketing']), validateParams(schemas.idParam), (req, res, next) => {
+  const { lead, notFound: missing } = leadService.scoreLead(req.validated.params.id, req.tenant.id);
+  if (missing) return next(notFound('Lead'));
+  auditChange(req, 'update', 'lead', lead);
+  res.json(maskForExport(lead, req));
 });
 
-app.get('/leads', (req, res) => {
-  const { status, sortBy = 'createdAt', sortDir = 'desc' } = req.query;
-  const filtered = status ? leads.filter(lead => lead.status === status) : leads;
+api.post('/leads/:id/tasks', requireAuth, authorize(['admin', 'sales', 'marketing']), validateParams(schemas.idParam), validateBody(schemas.leadTask), (req, res, next) => {
+  const { lead, notFound: missing } = leadService.addTask(req.validated.params.id, req.validated.body, req.tenant.id);
+  if (missing) return next(notFound('Lead'));
+  auditChange(req, 'update', 'lead', lead);
+  res.status(201).json(maskForExport(lead, req));
+});
 
-  const sorted = [...filtered].sort((a, b) => {
-    const direction = sortDir === 'asc' ? 1 : -1;
-    if (sortBy === 'name') return a.name.localeCompare(b.name) * direction;
-    const aDate = new Date(a.createdAt).getTime();
-    const bDate = new Date(b.createdAt).getTime();
-    return (aDate - bDate) * direction;
-  });
+api.post('/leads/:id/tasks/:taskId/complete', requireAuth, authorize(['admin', 'sales', 'marketing']), validateParams(z.object({ id: z.string().trim(), taskId: z.string().trim() })), (req, res, next) => {
+  const { lead, notFound: missing } = leadService.completeTask(
+    req.validated.params.id,
+    req.validated.params.taskId,
+    req.tenant.id
+  );
+  if (missing) return next(notFound('Lead'));
+  auditChange(req, 'update', 'lead', lead);
+  res.json(maskForExport(lead, req));
+});
 
-  res.json(sorted);
+api.post('/leads/:id/communications', requireAuth, authorize(['admin', 'sales', 'marketing']), validateParams(schemas.idParam), validateBody(schemas.leadCommunication), (req, res, next) => {
+  const { lead, notFound: missing } = leadService.logCommunication(req.validated.params.id, req.validated.body, req.tenant.id);
+  if (missing) return next(notFound('Lead'));
+  auditChange(req, 'update', 'lead', lead);
+  res.status(201).json(maskForExport(lead, req));
+});
+
+api.delete('/leads/:id', requireAuth, authorize(['admin', 'sales', 'marketing']), validateParams(schemas.idParam), (req, res, next) => {
+  const { lead, notFound: missing } = leadService.remove(req.validated.params.id, req.tenant.id);
+  if (missing) {
+    return next(notFound('Lead'));
+  }
+  auditChange(req, 'delete', 'lead', lead);
+  res.json(maskForExport(lead, req));
+});
+
+api.get('/leads', validateQuery(schemas.leadListQuery), (req, res) => {
+  res.json(maskForExport(leadService.list(req.validated.query, req.tenant.id), req));
+});
+
+/*
+  TEMPLATE ROUTES
+  Manage email/SMS templates with variants for A/B testing.
+*/
+api.get('/templates', requireAuth, authorize(['admin', 'marketing']), (req, res) => {
+  res.json(tenantService.scopedCollection(datasets.templates, req.tenant.id));
+});
+
+api.patch('/templates/:id', requireAuth, authorize(['admin', 'marketing']), validateParams(schemas.idParam), validateBody(schemas.templateVariantUpdate), (req, res, next) => {
+  const index = datasets.templates.findIndex(t => t.id === req.validated.params.id && t.tenantId === req.tenant.id);
+  if (index === -1) return next(notFound('Template'));
+  datasets.templates[index] = { ...datasets.templates[index], ...req.validated.body };
+  persist.templates(datasets.templates);
+  auditChange(req, 'update', 'template', datasets.templates[index]);
+  res.json(datasets.templates[index]);
+});
+
+api.get('/customers/:id/profile', requireAuth, authorize(['admin', 'sales', 'service']), validateParams(schemas.idParam), (req, res, next) => {
+  const customer = datasets.customers.find(c => c.id === req.validated.params.id && c.tenantId === req.tenant.id);
+  if (!customer) return next(notFound('Customer'));
+  const leads = datasets.leads.filter(l => l.customerId === customer.id || l.email === customer.email);
+  const tickets = datasets.serviceTickets.filter(t => t.customerId === customer.id);
+  const offers = datasets.financeOffers.filter(o => o.customerId === customer.id);
+  res.json({ customer, leads: maskForResponse(leads), serviceTickets: tickets, financeOffers: offers });
 });
 
 /*
@@ -493,36 +860,33 @@ app.get('/leads', (req, res) => {
   Settings store dealership contact information and configuration. This
   endpoint returns and updates the single settings object.
 */
-app.get('/settings', (req, res) => {
-  res.json(settings);
+api.get('/settings', (req, res) => {
+  res.json(settingsService.get(req.tenant.id));
 });
 
-app.put('/settings', (req, res) => {
-  const requiredError = validateFields(req.body, ['dealershipName', 'phone']);
-  if (requiredError) {
-    return res.status(400).json({ message: requiredError });
+api.put('/settings', requireAuth, authorize(['admin']), validateBody(schemas.settingsUpdate), (req, res, next) => {
+  const { settings, error } = settingsService.update(req.validated.body, req.tenant.id);
+  if (error) {
+    return next(new AppError('VALIDATION_ERROR', error, 400));
   }
-
-  const hours = req.body.hours || settings.hours;
-  settings = {
-    ...settings,
-    ...req.body,
-    hours: {
-      ...settings.hours,
-      ...hours
-    }
-  };
-  saveData('settings.json', settings);
+  auditChange(req, 'update', 'settings', settings);
   res.json(settings);
 });
 
 // Basic root route with description
-app.get('/', (req, res) => {
+api.get('/', (req, res) => {
   res.json({
     message:
       'RV Dealer Backend API is running. Available resources: /inventory, /teams, /reviews, /leads, /settings'
   });
 });
+
+app.use('/v1', api);
+app.use('/', api);
+
+app.use((req, res, next) => next(notFound('Route')));
+
+app.use(errorHandler);
 
 app.listen(port, () => {
   console.log(`Backend server listening on port ${port}`);

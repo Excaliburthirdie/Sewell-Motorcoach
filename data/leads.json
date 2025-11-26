@@ -1,2 +1,36 @@
 [
+  {
+    "id": "lead-1",
+    "name": "Ava Customer",
+    "email": "ava@example.com",
+    "message": "Interested in the Class A diesel coach.",
+    "subject": "Request pricing breakdown",
+    "status": "new",
+    "createdAt": "2024-11-01T00:00:00.000Z",
+    "source": "web",
+    "formType": "finance",
+    "channel": "website",
+    "utm": { "campaign": "fall-sale", "source": "google", "medium": "cpc" },
+    "assignment": { "ownerId": "user-sales-1", "assignedAt": "2024-11-01T01:00:00.000Z" },
+    "tasks": [
+      { "id": "task-1", "title": "Call back", "dueAt": "2024-11-02T12:00:00Z", "status": "open" }
+    ],
+    "communications": [
+      {
+        "id": "comm-1",
+        "channel": "email",
+        "direction": "outbound",
+        "summary": "Sent pricing details",
+        "occurredAt": "2024-11-01T02:00:00Z"
+      }
+    ],
+    "tenantId": "main",
+    "consent": {
+      "marketing": true,
+      "privacyPolicyVersion": "v1",
+      "termsAcceptedAt": "2024-11-01T00:00:00.000Z",
+      "consentSource": "web-form",
+      "timestamp": "2024-11-01T00:00:00.000Z"
+    }
+  }
 ]
