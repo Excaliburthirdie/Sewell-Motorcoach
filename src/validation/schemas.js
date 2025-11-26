@@ -154,6 +154,24 @@ const leadListQuery = z.object({
   tenantId: z.string().trim().min(1).optional()
 });
 
+const contentPageCreate = z.object({
+  title: z.string().trim(),
+  body: z.string().trim(),
+  slug: z.string().trim().optional(),
+  metaTitle: z.string().trim().optional(),
+  metaDescription: z.string().trim().optional()
+});
+
+const contentPageUpdate = contentPageCreate.partial();
+
+const eventCreate = z.object({
+  type: z.enum(['search', 'view', 'lead_submit']),
+  stockNumber: z.string().trim().optional(),
+  leadId: z.string().trim().optional(),
+  query: z.string().trim().optional(),
+  referrer: z.string().trim().optional()
+});
+
 const settingsUpdate = z.object({
   dealershipName: z.string().trim(),
   phone: z.string().trim(),
@@ -199,6 +217,9 @@ module.exports = {
     leadListQuery,
     leadStatusUpdate,
     settingsUpdate,
+    contentPageCreate,
+    contentPageUpdate,
+    eventCreate,
     idParam,
     inventoryId,
     authLogin,

@@ -57,13 +57,16 @@ const datasets = {
   teams: normalizeTenantedCollection(loadData('teams.json', [])),
   reviews: normalizeTenantedCollection(loadData('reviews.json', [])),
   leads: normalizeTenantedCollection(loadData('leads.json', [])),
+  contentPages: normalizeTenantedCollection(loadData('contentPages.json', [])),
+  events: normalizeTenantedCollection(loadData('events.json', [])),
   capabilities: loadData('capabilities.json', []),
   settings: normalizeSettings(loadData('settings.json', defaultSettings)),
   customers: normalizeTenantedCollection(loadData('customers.json', [])),
   serviceTickets: normalizeTenantedCollection(loadData('serviceTickets.json', [])),
   financeOffers: normalizeTenantedCollection(loadData('financeOffers.json', [])),
   users: normalizeTenantedCollection(loadData('users.json', [])),
-  refreshTokens: normalizeTenantedCollection(loadData('refreshTokens.json', []))
+  refreshTokens: normalizeTenantedCollection(loadData('refreshTokens.json', [])),
+  revokedRefreshTokens: normalizeTenantedCollection(loadData('revokedRefreshTokens.json', []))
 };
 
 const persist = {
@@ -71,6 +74,8 @@ const persist = {
   teams: data => saveData('teams.json', data),
   reviews: data => saveData('reviews.json', data),
   leads: data => saveData('leads.json', data),
+  contentPages: data => saveData('contentPages.json', data),
+  events: data => saveData('events.json', data),
   capabilities: data => saveData('capabilities.json', data),
   settings: data => saveData('settings.json', data),
   customers: data => saveData('customers.json', data),
@@ -78,6 +83,7 @@ const persist = {
   financeOffers: data => saveData('financeOffers.json', data),
   users: data => saveData('users.json', data),
   refreshTokens: data => saveData('refreshTokens.json', data),
+  revokedRefreshTokens: data => saveData('revokedRefreshTokens.json', data),
   tenants: data => saveData('tenants.json', data)
 };
 
