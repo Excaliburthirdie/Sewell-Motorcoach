@@ -4,72 +4,146 @@ const cors = require('cors');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 
+const { DATA_DIR } = require('./src/persistence/store');
+const capabilityService = require('./src/services/capabilityService');
+const inventoryService = require('./src/services/inventoryService');
+const teamService = require('./src/services/teamService');
+const reviewService = require('./src/services/reviewService');
+const leadService = require('./src/services/leadService');
+const settingsService = require('./src/services/settingsService');
+const { datasets } = require('./src/services/state');
+
 const app = express();
 const port = process.env.PORT || 3000;
-const DATA_DIR = `${__dirname}/data`;
-const VALID_LEAD_STATUSES = ['new', 'contacted', 'qualified', 'won', 'lost'];
+const API_KEY = process.env.API_KEY || process.env.ADMIN_API_KEY;
+const RATE_LIMIT_WINDOW_MS = Number(process.env.RATE_LIMIT_WINDOW_MS || 60_000);
+const RATE_LIMIT_MAX = Number(process.env.RATE_LIMIT_MAX || 300);
+
+const rateLimitBuckets = new Map();
 
 app.use(bodyParser.json());
 app.use(cors());
 
-// Shared helpers -----------------------------------------------------------
+// Core middleware stack ----------------------------------------------------
+app.use((req, res, next) => {
+  const requestId = req.headers['x-request-id'] || uuidv4();
+  req.requestId = requestId;
+  res.set('X-Request-Id', requestId);
+  next();
+});
 
-function loadData(file, defaultValue) {
-  try {
-    const data = fs.readFileSync(`${DATA_DIR}/${file}`, 'utf8');
-    return JSON.parse(data);
-  } catch (err) {
-    return defaultValue;
+app.use((req, res, next) => {
+  const startedAt = Date.now();
+  res.on('finish', () => {
+    const durationMs = Date.now() - startedAt;
+    console.log(
+      JSON.stringify({
+        level: 'info',
+        requestId: req.requestId,
+        method: req.method,
+        path: req.originalUrl,
+        status: res.statusCode,
+        durationMs
+      })
+    );
+  });
+  next();
+});
+
+app.use((req, res, next) => {
+  if (process.env.ENFORCE_HTTPS === 'true' && req.headers['x-forwarded-proto'] === 'http') {
+    return res.status(400).json({ message: 'HTTPS is required' });
   }
-}
+  next();
+});
 
-function saveData(file, data) {
-  fs.writeFileSync(`${DATA_DIR}/${file}`, JSON.stringify(data, null, 2));
-}
+app.use((req, res, next) => {
+  const now = Date.now();
+  const bucket = (rateLimitBuckets.get(req.ip) || []).filter(timestamp => now - timestamp < RATE_LIMIT_WINDOW_MS);
+  bucket.push(now);
+  rateLimitBuckets.set(req.ip, bucket);
 
+  if (bucket.length > RATE_LIMIT_MAX) {
+    return res.status(429).json({ message: 'Rate limit exceeded' });
+  }
+  next();
+});
+
+// Utility helpers ----------------------------------------------------------
 function respondNotFound(res, entity = 'Resource') {
   return res.status(404).json({ message: `${entity} not found` });
 }
 
-function validateFields(payload, requiredFields = []) {
-  const missing = requiredFields.filter(field => payload[field] === undefined || payload[field] === null || payload[field] === '');
-  if (missing.length) {
-    return `${missing.join(', ')} ${missing.length === 1 ? 'is' : 'are'} required`;
+function requireAuth(req, res, next) {
+  if (!API_KEY) return next();
+  const header = req.headers.authorization || '';
+  if (header === `Bearer ${API_KEY}`) return next();
+  return res.status(401).json({ message: 'Unauthorized: missing or invalid API token' });
+}
+
+function auditChange(req, action, entity, payload) {
+  const auditRecord = {
+    timestamp: new Date().toISOString(),
+    requestId: requestId(req),
+    action,
+    entity,
+    payload
+  };
+  fs.appendFile(`${DATA_DIR}/audit.log`, `${JSON.stringify(auditRecord)}\n`, () => {});
+}
+
+function requestId(req) {
+  return req.requestId || 'unknown';
+}
+
+capabilityService.normalizeCapabilities();
+
+const api = express.Router();
+
+/*
+  CAPABILITY ROUTES
+  Provide a machine-readable version of the 100 must-have capabilities
+  outlined in the README so other services and front-ends can consume
+  the checklist directly from the API.
+*/
+api.get('/capabilities', (req, res) => {
+  res.json(capabilityService.list(req.query));
+});
+
+api.get('/capabilities/:id', (req, res) => {
+  const id = Number(req.params.id);
+  const capability = capabilityService.getById(id);
+  if (!capability) {
+    return respondNotFound(res, 'Capability');
   }
-  return null;
-}
+  res.json(capability);
+});
 
-function clampNumber(value, fallback) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
-}
+api.get('/capabilities/status', (req, res) => {
+  res.json(capabilityService.status());
+});
 
-function sanitizeBoolean(value, fallback = false) {
-  if (typeof value === 'boolean') return value;
-  if (typeof value === 'string') return value.toLowerCase() === 'true';
-  return fallback;
-}
+api.get('/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    uptimeSeconds: process.uptime(),
+    requestId: requestId(req)
+  });
+});
 
-// Load initial data from JSON files or defaults.
-let inventory = loadData('inventory.json', []);
-let teams = loadData('teams.json', []);
-let reviews = loadData('reviews.json', []);
-let leads = loadData('leads.json', []);
-let settings = loadData('settings.json', {
-  dealershipName: 'Sewell Motorcoach',
-  address: '2118 Danville Rd',
-  city: 'Harrodsburg',
-  state: 'KY',
-  zip: '40330',
-  country: 'USA',
-  currency: 'USD',
-  phone: '859-734-5566',
-  email: 'sales@sewellmotorcoach.com',
-  hours: {
-    weekday: '9:00 AM - 6:00 PM',
-    saturday: '10:00 AM - 4:00 PM',
-    sunday: 'Closed'
-  }
+api.get('/metrics', (req, res) => {
+  res.json({
+    counts: {
+      inventory: datasets.inventory.length,
+      teams: datasets.teams.length,
+      reviews: datasets.reviews.length,
+      leads: datasets.leads.length,
+      capabilities: datasets.capabilities.length,
+      customers: datasets.customers.length,
+      serviceTickets: datasets.serviceTickets.length,
+      financeOffers: datasets.financeOffers.length
+    }
+  });
 });
 
 /*
@@ -79,153 +153,56 @@ let settings = loadData('settings.json', {
   condition (e.g. New, Used), msrp, price, salePrice, location,
   daysOnLot, images array and featured boolean.
 */
-app.get('/inventory', (req, res) => {
-  const {
-    industry,
-    category,
-    subcategory,
-    condition,
-    location,
-    featured,
-    minPrice,
-    maxPrice,
-    search,
-    sortBy = 'createdAt',
-    sortDir = 'desc',
-    limit,
-    offset
-  } = req.query;
-
-  const filtered = inventory
-    .filter(unit => !industry || unit.industry === industry)
-    .filter(unit => !category || unit.category === category)
-    .filter(unit => !subcategory || unit.subcategory === subcategory)
-    .filter(unit => !condition || unit.condition === condition)
-    .filter(unit => !location || unit.location === location)
-    .filter(unit =>
-      featured === undefined ? true : sanitizeBoolean(featured) === Boolean(unit.featured)
-    )
-    .filter(unit =>
-      minPrice ? Number(unit.price) >= clampNumber(minPrice, Number(unit.price)) : true
-    )
-    .filter(unit =>
-      maxPrice ? Number(unit.price) <= clampNumber(maxPrice, Number(unit.price)) : true
-    )
-    .filter(unit => {
-      if (!search) return true;
-      const term = search.toLowerCase();
-      return [
-        unit.stockNumber,
-        unit.name,
-        unit.category,
-        unit.subcategory,
-        unit.location
-      ]
-        .filter(Boolean)
-        .some(value => value.toLowerCase().includes(term));
-    });
-
-  const sorted = [...filtered].sort((a, b) => {
-    const direction = sortDir === 'asc' ? 1 : -1;
-    if (sortBy === 'price') return (Number(a.price) - Number(b.price)) * direction;
-    if (sortBy === 'msrp') return (Number(a.msrp) - Number(b.msrp)) * direction;
-    if (sortBy === 'daysOnLot') return (Number(a.daysOnLot) - Number(b.daysOnLot)) * direction;
-    const aDate = new Date(a.createdAt || 0).getTime();
-    const bDate = new Date(b.createdAt || 0).getTime();
-    return (aDate - bDate) * direction;
-  });
-
-  const start = clampNumber(offset, 0);
-  const end = limit ? start + clampNumber(limit, filtered.length) : filtered.length;
-
-  res.json({
-    total: sorted.length,
-    items: sorted.slice(start, end)
-  });
+api.get('/inventory', (req, res) => {
+  res.json(inventoryService.list(req.query));
 });
 
-app.get('/inventory/:id', (req, res) => {
-  const unit = inventory.find(u => u.id === req.params.id);
+api.get('/inventory/:id', (req, res) => {
+  const unit = inventoryService.findById(req.params.id);
   if (!unit) {
-    return res.status(404).json({ message: 'Unit not found' });
+    return respondNotFound(res, 'Unit');
   }
   res.json(unit);
 });
 
-app.post('/inventory', (req, res) => {
-  const requiredError = validateFields(req.body, ['stockNumber', 'name', 'condition', 'price']);
-  if (requiredError) {
-    return res.status(400).json({ message: requiredError });
+api.post('/inventory', requireAuth, (req, res) => {
+  const { unit, error } = inventoryService.create(req.body);
+  if (error) {
+    return res.status(400).json({ message: error });
   }
-
-  const unit = {
-    id: uuidv4(),
-    featured: sanitizeBoolean(req.body.featured, false),
-    createdAt: new Date().toISOString(),
-    images: Array.isArray(req.body.images) ? req.body.images : [],
-    ...req.body
-  };
-
-  inventory.push(unit);
-  saveData('inventory.json', inventory);
+  auditChange(req, 'create', 'inventory', unit);
   res.status(201).json(unit);
 });
 
-app.put('/inventory/:id', (req, res) => {
-  const index = inventory.findIndex(u => u.id === req.params.id);
-  if (index === -1) {
+api.put('/inventory/:id', requireAuth, (req, res) => {
+  const { unit, notFound } = inventoryService.update(req.params.id, req.body);
+  if (notFound) {
     return respondNotFound(res, 'Unit');
   }
-
-  const updated = {
-    ...inventory[index],
-    ...req.body,
-    featured: sanitizeBoolean(req.body.featured, inventory[index].featured)
-  };
-
-  inventory[index] = updated;
-  saveData('inventory.json', inventory);
-  res.json(updated);
+  auditChange(req, 'update', 'inventory', unit);
+  res.json(unit);
 });
 
-app.patch('/inventory/:id/feature', (req, res) => {
-  const index = inventory.findIndex(u => u.id === req.params.id);
-  if (index === -1) {
+api.patch('/inventory/:id/feature', requireAuth, (req, res) => {
+  const { unit, notFound } = inventoryService.setFeatured(req.params.id, req.body.featured);
+  if (notFound) {
     return respondNotFound(res, 'Unit');
   }
-
-  const featured = sanitizeBoolean(req.body.featured, true);
-  inventory[index] = { ...inventory[index], featured };
-  saveData('inventory.json', inventory);
-  res.json(inventory[index]);
+  auditChange(req, 'update', 'inventory', unit);
+  res.json(unit);
 });
 
-app.delete('/inventory/:id', (req, res) => {
-  const index = inventory.findIndex(u => u.id === req.params.id);
-  if (index === -1) {
+api.delete('/inventory/:id', requireAuth, (req, res) => {
+  const { unit, notFound } = inventoryService.remove(req.params.id);
+  if (notFound) {
     return respondNotFound(res, 'Unit');
   }
-  const removed = inventory.splice(index, 1);
-  saveData('inventory.json', inventory);
-  res.json(removed[0]);
+  auditChange(req, 'delete', 'inventory', unit);
+  res.json(unit);
 });
 
-app.get('/inventory/stats', (req, res) => {
-  const byCondition = inventory.reduce((acc, unit) => {
-    acc[unit.condition] = (acc[unit.condition] || 0) + 1;
-    return acc;
-  }, {});
-
-  const averagePrice =
-    inventory.length > 0
-      ? inventory.reduce((sum, unit) => sum + Number(unit.price || 0), 0) / inventory.length
-      : 0;
-
-  res.json({
-    totalUnits: inventory.length,
-    byCondition,
-    averagePrice
-  });
+api.get('/inventory/stats', (req, res) => {
+  res.json(inventoryService.stats());
 });
 
 /*
@@ -233,72 +210,47 @@ app.get('/inventory/stats', (req, res) => {
   Each team has an id, name and an array of members. Each member has
   firstName, lastName, jobRole, biography and optional socialLinks array.
 */
-app.get('/teams', (req, res) => {
-  res.json(teams);
+api.get('/teams', (req, res) => {
+  res.json(teamService.list());
 });
 
-app.get('/teams/:id', (req, res) => {
-  const team = teams.find(t => t.id === req.params.id);
+api.get('/teams/:id', (req, res) => {
+  const team = teamService.findById(req.params.id);
   if (!team) {
-    return res.status(404).json({ message: 'Team not found' });
+    return respondNotFound(res, 'Team');
   }
   res.json(team);
 });
 
-app.post('/teams', (req, res) => {
-  const requiredError = validateFields(req.body, ['name']);
-  if (requiredError) {
-    return res.status(400).json({ message: requiredError });
+api.post('/teams', requireAuth, (req, res) => {
+  const { team, error } = teamService.create(req.body);
+  if (error) {
+    return res.status(400).json({ message: error });
   }
-
-  const members = Array.isArray(req.body.members)
-    ? req.body.members.map(member => ({
-        ...member,
-        socialLinks: Array.isArray(member.socialLinks) ? member.socialLinks : []
-      }))
-    : [];
-
-  const team = { id: uuidv4(), members, ...req.body };
-  teams.push(team);
-  saveData('teams.json', teams);
+  auditChange(req, 'create', 'team', team);
   res.status(201).json(team);
 });
 
-app.put('/teams/:id', (req, res) => {
-  const index = teams.findIndex(t => t.id === req.params.id);
-  if (index === -1) {
+api.put('/teams/:id', requireAuth, (req, res) => {
+  const { team, notFound } = teamService.update(req.params.id, req.body);
+  if (notFound) {
     return respondNotFound(res, 'Team');
   }
-  const members = Array.isArray(req.body.members)
-    ? req.body.members.map(member => ({
-        ...member,
-        socialLinks: Array.isArray(member.socialLinks) ? member.socialLinks : []
-      }))
-    : teams[index].members;
-
-  teams[index] = { ...teams[index], ...req.body, members };
-  saveData('teams.json', teams);
-  res.json(teams[index]);
+  auditChange(req, 'update', 'team', team);
+  res.json(team);
 });
 
-app.delete('/teams/:id', (req, res) => {
-  const index = teams.findIndex(t => t.id === req.params.id);
-  if (index === -1) {
+api.delete('/teams/:id', requireAuth, (req, res) => {
+  const { team, notFound } = teamService.remove(req.params.id);
+  if (notFound) {
     return respondNotFound(res, 'Team');
   }
-  const removed = teams.splice(index, 1);
-  saveData('teams.json', teams);
-  res.json(removed[0]);
+  auditChange(req, 'delete', 'team', team);
+  res.json(team);
 });
 
-app.get('/teams/roles', (req, res) => {
-  const roles = new Set();
-  teams.forEach(team => {
-    team.members?.forEach(member => {
-      if (member.jobRole) roles.add(member.jobRole);
-    });
-  });
-  res.json({ roles: Array.from(roles) });
+api.get('/teams/roles', (req, res) => {
+  res.json({ roles: teamService.roles() });
 });
 
 /*
@@ -306,100 +258,59 @@ app.get('/teams/roles', (req, res) => {
   Reviews represent customer testimonials. Each review has id,
   name, rating (number between 1 and 5), content and visibility boolean.
 */
-app.get('/reviews', (req, res) => {
-  res.json(reviews);
+api.get('/reviews', (req, res) => {
+  res.json(reviewService.list());
 });
 
-app.get('/reviews/:id', (req, res) => {
-  const review = reviews.find(r => r.id === req.params.id);
+api.get('/reviews/:id', (req, res) => {
+  const review = reviewService.findById(req.params.id);
   if (!review) {
-    return res.status(404).json({ message: 'Review not found' });
+    return respondNotFound(res, 'Review');
   }
   res.json(review);
 });
 
-app.post('/reviews', (req, res) => {
-  const requiredError = validateFields(req.body, ['name', 'rating', 'content']);
-  if (requiredError) {
-    return res.status(400).json({ message: requiredError });
+api.post('/reviews', requireAuth, (req, res) => {
+  const { review, error } = reviewService.create(req.body);
+  if (error) {
+    return res.status(400).json({ message: error });
   }
-
-  const rating = clampNumber(req.body.rating, 0);
-  if (rating < 1 || rating > 5) {
-    return res.status(400).json({ message: 'Rating must be between 1 and 5' });
-  }
-
-  const review = {
-    id: uuidv4(),
-    visible: sanitizeBoolean(req.body.visible, true),
-    createdAt: new Date().toISOString(),
-    rating,
-    ...req.body
-  };
-
-  reviews.push(review);
-  saveData('reviews.json', reviews);
+  auditChange(req, 'create', 'review', review);
   res.status(201).json(review);
 });
 
-app.put('/reviews/:id', (req, res) => {
-  const index = reviews.findIndex(r => r.id === req.params.id);
-  if (index === -1) {
+api.put('/reviews/:id', requireAuth, (req, res) => {
+  const { review, error, notFound } = reviewService.update(req.params.id, req.body);
+  if (notFound) {
     return respondNotFound(res, 'Review');
   }
-
-  const rating = req.body.rating ? clampNumber(req.body.rating, reviews[index].rating) : reviews[index].rating;
-  if (rating < 1 || rating > 5) {
-    return res.status(400).json({ message: 'Rating must be between 1 and 5' });
+  if (error) {
+    return res.status(400).json({ message: error });
   }
-
-  reviews[index] = {
-    ...reviews[index],
-    ...req.body,
-    rating,
-    visible: sanitizeBoolean(req.body.visible, reviews[index].visible)
-  };
-  saveData('reviews.json', reviews);
-  res.json(reviews[index]);
+  auditChange(req, 'update', 'review', review);
+  res.json(review);
 });
 
-app.patch('/reviews/:id/visibility', (req, res) => {
-  const index = reviews.findIndex(r => r.id === req.params.id);
-  if (index === -1) {
+api.patch('/reviews/:id/visibility', requireAuth, (req, res) => {
+  const { review, notFound } = reviewService.toggleVisibility(req.params.id, req.body.visible);
+  if (notFound) {
     return respondNotFound(res, 'Review');
   }
-
-  reviews[index] = {
-    ...reviews[index],
-    visible: sanitizeBoolean(req.body.visible, !reviews[index].visible)
-  };
-  saveData('reviews.json', reviews);
-  res.json(reviews[index]);
+  auditChange(req, 'update', 'review', review);
+  res.json(review);
 });
 
-app.delete('/reviews/:id', (req, res) => {
-  const index = reviews.findIndex(r => r.id === req.params.id);
-  if (index === -1) {
+api.delete('/reviews/:id', requireAuth, (req, res) => {
+  const { review, notFound } = reviewService.remove(req.params.id);
+  if (notFound) {
     return respondNotFound(res, 'Review');
   }
-  const removed = reviews.splice(index, 1);
-  saveData('reviews.json', reviews);
-  res.json(removed[0]);
+  auditChange(req, 'delete', 'review', review);
+  res.json(review);
 });
 
-app.get('/reviews/summary', (req, res) => {
-  const visibleReviews = reviews.filter(r => r.visible !== false);
-  const averageRating =
-    visibleReviews.length > 0
-      ? visibleReviews.reduce((sum, review) => sum + Number(review.rating || 0), 0) /
-        visibleReviews.length
-      : 0;
-
-  res.json({
-    total: reviews.length,
-    visible: visibleReviews.length,
-    averageRating
-  });
+api.get('/reviews/summary', (req, res) => {
+  res.json(reviewService.summary());
 });
 
 /*
@@ -407,85 +318,55 @@ app.get('/reviews/summary', (req, res) => {
   Leads represent submissions from contact forms. Each lead has id,
   name, email, subject, message and createdAt timestamp.
 */
-app.get('/leads/:id', (req, res) => {
-  const lead = leads.find(l => l.id === req.params.id);
+api.get('/leads/:id', (req, res) => {
+  const lead = leadService.findById(req.params.id);
   if (!lead) {
-    return res.status(404).json({ message: 'Lead not found' });
+    return respondNotFound(res, 'Lead');
   }
   res.json(lead);
 });
 
-app.post('/leads', (req, res) => {
-  const requiredError = validateFields(req.body, ['name', 'email', 'message']);
-  if (requiredError) {
-    return res.status(400).json({ message: requiredError });
+api.post('/leads', requireAuth, (req, res) => {
+  const { lead, error } = leadService.create(req.body);
+  if (error) {
+    return res.status(400).json({ message: error });
   }
-
-  const lead = {
-    id: uuidv4(),
-    createdAt: new Date().toISOString(),
-    status: VALID_LEAD_STATUSES.includes(req.body.status) ? req.body.status : 'new',
-    subject: req.body.subject || 'General inquiry',
-    ...req.body
-  };
-  leads.push(lead);
-  saveData('leads.json', leads);
+  auditChange(req, 'create', 'lead', lead);
   res.status(201).json(lead);
 });
 
-app.put('/leads/:id', (req, res) => {
-  const index = leads.findIndex(l => l.id === req.params.id);
-  if (index === -1) {
+api.put('/leads/:id', requireAuth, (req, res) => {
+  const { lead, notFound } = leadService.update(req.params.id, req.body);
+  if (notFound) {
     return respondNotFound(res, 'Lead');
   }
-
-  const status = req.body.status && VALID_LEAD_STATUSES.includes(req.body.status)
-    ? req.body.status
-    : leads[index].status;
-
-  leads[index] = { ...leads[index], ...req.body, status };
-  saveData('leads.json', leads);
-  res.json(leads[index]);
+  auditChange(req, 'update', 'lead', lead);
+  res.json(lead);
 });
 
-app.patch('/leads/:id/status', (req, res) => {
-  const index = leads.findIndex(l => l.id === req.params.id);
-  if (index === -1) {
+api.patch('/leads/:id/status', requireAuth, (req, res) => {
+  const { lead, error, notFound } = leadService.setStatus(req.params.id, req.body.status);
+  if (notFound) {
     return respondNotFound(res, 'Lead');
   }
-
-  if (!VALID_LEAD_STATUSES.includes(req.body.status)) {
-    return res.status(400).json({ message: `Status must be one of: ${VALID_LEAD_STATUSES.join(', ')}` });
+  if (error) {
+    return res.status(400).json({ message: error });
   }
-
-  leads[index] = { ...leads[index], status: req.body.status };
-  saveData('leads.json', leads);
-  res.json(leads[index]);
+  auditChange(req, 'update', 'lead', lead);
+  res.json(lead);
 });
 
-app.delete('/leads/:id', (req, res) => {
-  const index = leads.findIndex(l => l.id === req.params.id);
-  if (index === -1) {
+api.delete('/leads/:id', requireAuth, (req, res) => {
+  const { lead, notFound } = leadService.remove(req.params.id);
+  if (notFound) {
     return respondNotFound(res, 'Lead');
   }
-  const removed = leads.splice(index, 1);
-  saveData('leads.json', leads);
-  res.json(removed[0]);
+  auditChange(req, 'delete', 'lead', lead);
+  res.json(lead);
 });
 
-app.get('/leads', (req, res) => {
-  const { status, sortBy = 'createdAt', sortDir = 'desc' } = req.query;
-  const filtered = status ? leads.filter(lead => lead.status === status) : leads;
-
-  const sorted = [...filtered].sort((a, b) => {
-    const direction = sortDir === 'asc' ? 1 : -1;
-    if (sortBy === 'name') return a.name.localeCompare(b.name) * direction;
-    const aDate = new Date(a.createdAt).getTime();
-    const bDate = new Date(b.createdAt).getTime();
-    return (aDate - bDate) * direction;
-  });
-
-  res.json(sorted);
+api.get('/leads', (req, res) => {
+  res.json(leadService.list(req.query));
 });
 
 /*
@@ -493,36 +374,29 @@ app.get('/leads', (req, res) => {
   Settings store dealership contact information and configuration. This
   endpoint returns and updates the single settings object.
 */
-app.get('/settings', (req, res) => {
-  res.json(settings);
+api.get('/settings', (req, res) => {
+  res.json(settingsService.get());
 });
 
-app.put('/settings', (req, res) => {
-  const requiredError = validateFields(req.body, ['dealershipName', 'phone']);
-  if (requiredError) {
-    return res.status(400).json({ message: requiredError });
+api.put('/settings', requireAuth, (req, res) => {
+  const { settings, error } = settingsService.update(req.body);
+  if (error) {
+    return res.status(400).json({ message: error });
   }
-
-  const hours = req.body.hours || settings.hours;
-  settings = {
-    ...settings,
-    ...req.body,
-    hours: {
-      ...settings.hours,
-      ...hours
-    }
-  };
-  saveData('settings.json', settings);
+  auditChange(req, 'update', 'settings', settings);
   res.json(settings);
 });
 
 // Basic root route with description
-app.get('/', (req, res) => {
+api.get('/', (req, res) => {
   res.json({
     message:
       'RV Dealer Backend API is running. Available resources: /inventory, /teams, /reviews, /leads, /settings'
   });
 });
+
+app.use('/v1', api);
+app.use('/', api);
 
 app.listen(port, () => {
   console.log(`Backend server listening on port ${port}`);

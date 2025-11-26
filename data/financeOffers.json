@@ -1,0 +1,11 @@
+[
+  {
+    "id": "fin-001",
+    "lender": "Summit Financial",
+    "termMonths": 180,
+    "apr": 5.25,
+    "downPayment": 10000,
+    "restrictions": "Model year 2016+ only",
+    "vehicleCategory": "Motorhome"
+  }
+]
