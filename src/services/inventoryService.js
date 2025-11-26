@@ -56,6 +56,9 @@ function list(query = {}, tenantId) {
     offset
   } = query;
 
+  const minPriceValue = Number(minPrice);
+  const maxPriceValue = Number(maxPrice);
+
   const tenant = normalizeTenantId(tenantId);
   const filtered = datasets.inventory
     .filter(unit => matchesTenant(unit.tenantId, tenant))
@@ -66,8 +69,14 @@ function list(query = {}, tenantId) {
     .filter(unit => !location || unit.location === location)
     .filter(unit => !transferStatus || unit.transferStatus === transferStatus)
     .filter(unit => (featured === undefined ? true : sanitizeBoolean(featured) === Boolean(unit.featured)))
-    .filter(unit => (minPrice ? Number(unit.price) >= clampNumber(minPrice, Number(unit.price)) : true))
-    .filter(unit => (maxPrice ? Number(unit.price) <= clampNumber(maxPrice, Number(unit.price)) : true))
+    .filter(unit => {
+      if (!Number.isFinite(minPriceValue)) return true;
+      return calculateTotalPrice(unit) >= minPriceValue;
+    })
+    .filter(unit => {
+      if (!Number.isFinite(maxPriceValue)) return true;
+      return calculateTotalPrice(unit) <= maxPriceValue;
+    })
     .filter(unit => {
       if (!search) return true;
       const term = search.toLowerCase();
@@ -87,9 +96,10 @@ function list(query = {}, tenantId) {
   });
 
   const start = clampNumber(offset, 0);
-  const end = limit ? start + clampNumber(limit, filtered.length) : filtered.length;
+  const clampedLimit = limit === undefined ? undefined : clampNumber(limit, filtered.length);
+  const end = clampedLimit === undefined ? filtered.length : start + clampedLimit;
 
-  const appliedLimit = limit ? clampNumber(limit, filtered.length) : undefined;
+  const appliedLimit = clampedLimit;
 
   return {
     items: sorted.slice(start, end).map(safeUnit),

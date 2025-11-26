@@ -25,7 +25,7 @@ describe('inventoryService list filters', () => {
     datasets.inventory = [
       buildUnit({ id: 'a', vin: 'VIN-A', name: 'Luxury Coach', featured: true, price: 150000, condition: 'new' }),
       buildUnit({ id: 'b', vin: 'VIN-B', name: 'Used Camper', condition: 'used', price: 80000, tenantId: 'lexington' }),
-      buildUnit({ id: 'c', vin: 'VIN-C', name: 'Budget Coach', condition: 'demo', price: 60000, category: 'Trailer' })
+      buildUnit({ id: 'c', vin: 'VIN-C', name: 'Budget Coach', condition: 'demo', price: 90000, category: 'Trailer' })
     ];
   });
 
