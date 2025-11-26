@@ -4,13 +4,15 @@
     "name": "Ane",
     "rating": 5,
     "content": "Excellent service!",
-    "visible": true
+    "visible": true,
+    "tenantId": "main"
   },
   {
     "id": "2",
     "name": "John",
     "rating": 4,
     "content": "Best service ever!",
-    "visible": true
+    "visible": true,
+    "tenantId": "main"
   }
 ]

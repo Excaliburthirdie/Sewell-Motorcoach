@@ -9,7 +9,10 @@
         "jobRole": "General Manager",
         "biography": "Jon has over 20 years of experience in RV sales and management.",
         "socialLinks": [
-          { "type": "linkedin", "url": "https://linkedin.com/in/jonmorris" }
+          {
+            "type": "linkedin",
+            "url": "https://linkedin.com/in/jonmorris"
+          }
         ]
       },
       {
@@ -19,7 +22,8 @@
         "biography": "Jane oversees the day-to-day operations of the dealership and ensures exceptional customer service.",
         "socialLinks": []
       }
-    ]
+    ],
+    "tenantId": "main"
   },
   {
     "id": "2",
@@ -32,6 +36,7 @@
         "biography": "Ricardo helps customers find the perfect RV for their adventures.",
         "socialLinks": []
       }
-    ]
+    ],
+    "tenantId": "main"
   }
 ]

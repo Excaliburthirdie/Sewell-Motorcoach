@@ -1,0 +1,602 @@
+[
+  {
+    "id": 1,
+    "text": "Layered architecture separating routing, business logic and persistence for clarity.",
+    "status": "done",
+    "note": "Established service/persistence layers and modular routes for routing/business logic separation."
+  },
+  {
+    "id": 2,
+    "text": "Domain models for inventory, leads, customers, service tickets and finance offers.",
+    "status": "done",
+    "note": "Introduced explicit domain models and persisted datasets for customers, service tickets, and finance offers alongside inventory and leads."
+  },
+  {
+    "id": 3,
+    "text": "Clear API versioning strategy (e.g. `/v1`, `/v2`) to support breaking changes.",
+    "status": "done",
+    "note": "Confirmed versioned routing via /v1 with shared router wiring for future versions."
+  },
+  {
+    "id": 4,
+    "text": "Centralized validation layer with reusable schemas for every endpoint.",
+    "status": "done",
+    "note": "Added schema-driven validation middleware and reusable request schemas across endpoints."
+  },
+  {
+    "id": 5,
+    "text": "Strong typing via TypeScript or a schema-first tool like OpenAPI or Zod.",
+    "status": "done",
+    "note": "Adopted zodLite schema definitions to enforce typed payloads and queries for all routes."
+  },
+  {
+    "id": 6,
+    "text": "Consistent error-handling middleware with machine-readable error codes.",
+    "status": "done",
+    "note": "Introduced centralized AppError handler emitting machine-readable codes with request ids."
+  },
+  {
+    "id": 7,
+    "text": "Request correlation IDs for tracing complex user journeys across services.",
+    "status": "done",
+    "note": "Request correlation ids now flow through responses, audits, and error logs for tracing."
+  },
+  {
+    "id": 8,
+    "text": "Structured JSON logging with log levels and request context metadata.",
+    "status": "done",
+    "note": "Structured JSON request/response logging with log levels and context metadata."
+  },
+  {
+    "id": 9,
+    "text": "Configurable rate limiting to protect public endpoints from abuse.",
+    "status": "done",
+    "note": "Rate limiter now surfaces standardized error codes using existing configurable window and max settings."
+  },
+  {
+    "id": 10,
+    "text": "Built-in JWT or OAuth2 authentication with refresh token rotation.",
+    "status": "done",
+    "note": "Implemented JWT login/refresh/logout endpoints with rotating refresh tokens and bearer auth enforcement."
+  },
+  {
+    "id": 11,
+    "text": "Role-based access control with granular permissions per resource.",
+    "status": "done",
+    "note": "Enforced role-based permissions across protected routes with seeded admin/sales/marketing accounts."
+  },
+  {
+    "id": 12,
+    "text": "Multi-tenancy support for multi-location dealership groups.",
+    "status": "done",
+    "note": "Added tenant resolution middleware, tenant-aware auth tokens, per-tenant filtering/persistence, and seed tenants."
+  },
+  {
+    "id": 13,
+    "text": "Environment-based configuration management with secrets stored securely.",
+    "status": "done",
+    "note": "Centralized configuration module with .env example covering auth, tenancy, rate limits, and HTTPS settings."
+  },
+  {
+    "id": 14,
+    "text": "HTTPS enforcement and HSTS headers for all deployed environments.",
+    "status": "done",
+    "note": "Added HSTS headers and configurable HTTPS enforcement controlled via env-driven config."
+  },
+  {
+    "id": 15,
+    "text": "Input sanitization and output escaping to mitigate injection risks.",
+    "status": "done",
+    "note": "Added request/response sanitization middleware with HTML-escaping to mitigate injection risks."
+  },
+  {
+    "id": 16,
+    "text": "CSRF protection for browser-based consumers.",
+    "status": "done",
+    "note": "Added CSRF protection middleware issuing tokens via cookie/header and new /csrf endpoint."
+  },
+  {
+    "id": 17,
+    "text": "Secure cookie settings with SameSite and HttpOnly flags where applicable.",
+    "status": "done",
+    "note": "Hardened cookie defaults with SameSite, Secure, and HttpOnly options for CSRF token delivery."
+  },
+  {
+    "id": 18,
+    "text": "Automated security scanning for dependencies and container images.",
+    "status": "done",
+    "note": "Added npm audit script plus GitHub Actions workflow running dependency and Trivy filesystem scans."
+  },
+  {
+    "id": 19,
+    "text": "Audit logging for changes to sensitive data such as pricing and discounts.",
+    "status": "done",
+    "note": "Captured pricing/discount changes with before/after values, actor context, and audit log persistence."
+  },
+  {
+    "id": 20,
+    "text": "Data retention policies with automatic archival and deletion routines.",
+    "status": "done",
+    "note": "Scheduled retention worker archiving aged leads and pruning audit logs per configurable intervals."
+  },
+  {
+    "id": 21,
+    "text": "Configurable PII masking for logs and exports.",
+    "status": "done",
+    "note": "Config-driven PII masking for audit logs and optional lead exports with sensitive key controls."
+  },
+  {
+    "id": 22,
+    "text": "GDPR/CCPA-compliant consent tracking for lead capture and marketing.",
+    "status": "done",
+    "note": "Leads capture consent metadata (marketing opt-in, source, timestamps, IP/UA) with validation."
+  },
+  {
+    "id": 23,
+    "text": "Inventory schema that tracks VIN, year, length, weight and chassis details.",
+    "status": "done",
+    "note": "Inventory units track VIN, model year, length, weight, chassis with seeded examples."
+  },
+  {
+    "id": 24,
+    "text": "Support for multiple condition states (new, used, demo, pending sale).",
+    "status": "done",
+    "note": "Condition states expanded to New/Used/Demo/Pending Sale and reflected in seed data."
+  },
+  {
+    "id": 25,
+    "text": "Pricing fields for MSRP, sale price, rebates, taxes and fees.",
+    "status": "done",
+    "note": "Pricing model includes sale price, rebates, taxes, fees with normalized storage and audits."
+  },
+  {
+    "id": 26,
+    "text": "Location-aware stock with transfer and hold statuses across lots.",
+    "status": "done",
+    "note": "Added lot-aware inventory with hold/transfer endpoints, validation, and seeded status fields."
+  },
+  {
+    "id": 27,
+    "text": "Media management for photos, 360 tours, floorplans and video links.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 28,
+    "text": "Automated image optimization and CDN delivery for media assets.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 29,
+    "text": "Bulk import/export of inventory via CSV, Excel and DMS integrations.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 30,
+    "text": "Integration hooks for dealer management systems (DMS) and OEM feeds.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 31,
+    "text": "Real-time availability sync with third-party marketplaces (RV Trader, etc.).",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 32,
+    "text": "Workflow rules for reconditioning, detail and photography steps.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 33,
+    "text": "Service scheduling APIs for pre-delivery inspections and warranty work.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 34,
+    "text": "Lead capture endpoints for web forms, chatbots, phone logs and QR codes.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 35,
+    "text": "Lead enrichment via third-party data (credit, trade-in valuation, geo lookup).",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 36,
+    "text": "Automated lead assignment based on territory, product line or availability.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 37,
+    "text": "Lead scoring that blends engagement, credit tier and inventory fit.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 38,
+    "text": "Task and reminder system for follow-ups with due dates and outcomes.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 39,
+    "text": "Communication logs capturing calls, SMS, emails and in-person visits.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 40,
+    "text": "Email/SMS templates with personalization tokens and A/B testing support.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 41,
+    "text": "Unified customer profile combining lead data, purchase history and service.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 42,
+    "text": "Quoting engine for monthly payments with lender rate tables and terms.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 43,
+    "text": "Digital desking flows for F&I products, warranties and protection plans.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 44,
+    "text": "Trade-in appraisal workflows with photo capture and condition checklists.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 45,
+    "text": "Document generation for purchase agreements and disclosures.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 46,
+    "text": "E-signature integration for contracts and consent forms.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 47,
+    "text": "Appointment scheduling with calendar sync to staff calendars.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 48,
+    "text": "Test drive slot management with vehicle hold logic.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 49,
+    "text": "Delivery scheduling and checklists for walkthroughs and accessories.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 50,
+    "text": "Integration with parts inventory for accessory bundles.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 51,
+    "text": "Aftermarket upsell tracking (solar kits, towing packages, extended service).",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 52,
+    "text": "Service ticketing with labor, parts, sublet and warranty claim tracking.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 53,
+    "text": "Warranty claims submission to OEM portals with status callbacks.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 54,
+    "text": "Recall management with VIN lookups and customer notification tooling.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 55,
+    "text": "Maintenance schedules and reminders tied to unit usage and seasons.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 56,
+    "text": "Rental module for units with availability calendars and damage deposits.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 57,
+    "text": "Fleet management for loaners and courtesy vehicles.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 58,
+    "text": "Robust search with filters for specs, price ranges, lifestyle tags and features.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 59,
+    "text": "Personalized recommendations using browsing history and saved searches.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 60,
+    "text": "Saved favorites and watchlists with price drop notifications.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 61,
+    "text": "SEO-friendly URL slugs and metadata for unit detail pages served by the API.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 62,
+    "text": "Content management for blog posts, FAQs and landing pages.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 63,
+    "text": "Configurable merchandising rules (featured, clearance, seasonal campaigns).",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 64,
+    "text": "Dynamic banners and badges (e.g., \"New Arrival\", \"Price Drop\", \"Certified\").",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 65,
+    "text": "Geo-aware location selection and language/currency localization.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 66,
+    "text": "Tax calculation service that respects location-based rules.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 67,
+    "text": "Shipping/delivery quotes with integrations to logistics partners.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 68,
+    "text": "Payment gateway integration for deposits and online reservations.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 69,
+    "text": "Support for alternative payments (ACH, financing pre-approvals, wallet).",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 70,
+    "text": "Real-time analytics events for lead submissions, searches and conversions.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 71,
+    "text": "Dashboard KPIs for sales velocity, days on lot, gross margin and CSI scores.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 72,
+    "text": "Funnel analytics for lead response times and pipeline conversion rates.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 73,
+    "text": "A/B testing hooks for pricing strategies and promotional copy.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 74,
+    "text": "Data warehouse exports and BI connectors (Snowflake, BigQuery, Redshift).",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 75,
+    "text": "Webhooks for inventory updates, lead status changes and appointments.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 76,
+    "text": "Event-driven architecture with queues for async tasks and retries.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 77,
+    "text": "Caching layer for read-heavy endpoints with cache invalidation policies.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 78,
+    "text": "Full-text search index for inventory and content.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 79,
+    "text": "GraphQL gateway for flexible front-end consumption when needed.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 80,
+    "text": "gRPC/internal APIs for high-performance service-to-service calls.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 81,
+    "text": "Health checks and readiness probes for container orchestration.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 82,
+    "text": "Distributed tracing instrumentation (OpenTelemetry) across services.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 83,
+    "text": "Metrics collection (latency, throughput, error rates) with alerting.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 84,
+    "text": "Feature flag system for gradual rollouts and safe experimentation.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 85,
+    "text": "Blue/green and canary deployment strategies with automated rollbacks.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 86,
+    "text": "Infrastructure-as-code definitions for repeatable environments.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 87,
+    "text": "CI/CD pipelines with linting, tests, security scans and preview deployments.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 88,
+    "text": "Comprehensive unit, integration and contract tests for all endpoints.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 89,
+    "text": "Test data factories and seed scripts for realistic demo environments.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 90,
+    "text": "Local developer environment using containers and seeded fixtures.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 91,
+    "text": "API documentation with OpenAPI/Swagger and interactive consoles.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 92,
+    "text": "SDKs or client libraries for JavaScript, Python and mobile platforms.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 93,
+    "text": "Sandbox mode for partners to test against without affecting production data.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 94,
+    "text": "Rate- and quota-tracking for partner integrations with billing hooks.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 95,
+    "text": "Support SLAs with uptime reporting and status page integrations.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 96,
+    "text": "Accessibility-friendly responses and content for ADA compliance.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 97,
+    "text": "Localization files for multi-language content and communications.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 98,
+    "text": "Backup and disaster recovery runbooks with tested restore drills.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 99,
+    "text": "Immutable event log or change data capture stream for analytics.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 100,
+    "text": "Observability-driven postmortem process with action item tracking.",
+    "status": "pending",
+    "note": ""
+  }
+]

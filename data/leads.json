@@ -1,2 +1,19 @@
 [
+  {
+    "id": "lead-1",
+    "name": "Ava Customer",
+    "email": "ava@example.com",
+    "message": "Interested in the Class A diesel coach.",
+    "subject": "Request pricing breakdown",
+    "status": "new",
+    "createdAt": "2024-11-01T00:00:00.000Z",
+    "tenantId": "main",
+    "consent": {
+      "marketing": true,
+      "privacyPolicyVersion": "v1",
+      "termsAcceptedAt": "2024-11-01T00:00:00.000Z",
+      "consentSource": "web-form",
+      "timestamp": "2024-11-01T00:00:00.000Z"
+    }
+  }
 ]
