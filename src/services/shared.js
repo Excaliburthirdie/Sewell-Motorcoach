@@ -10,7 +10,9 @@ function sanitizeBoolean(value, fallback = false) {
 }
 
 function validateFields(payload, requiredFields = []) {
-  const missing = requiredFields.filter(field => payload[field] === undefined || payload[field] === null || payload[field] === '');
+  const missing = requiredFields.filter(
+    field => payload[field] === undefined || payload[field] === null || payload[field] === ''
+  );
   if (missing.length) {
     return `${missing.join(', ')} ${missing.length === 1 ? 'is' : 'are'} required`;
   }

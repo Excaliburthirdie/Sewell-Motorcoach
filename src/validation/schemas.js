@@ -138,7 +138,7 @@ const authLogin = z.object({
 });
 
 const authRefresh = z.object({
-  refreshToken: z.string().trim().min(10)
+  refreshToken: z.string().trim().min(10).optional()
 });
 
 module.exports = {
