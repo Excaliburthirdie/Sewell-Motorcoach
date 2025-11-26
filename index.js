@@ -19,6 +19,8 @@ const { validateBody, validateParams, validateQuery } = require('./src/middlewar
 const { schemas } = require('./src/validation/schemas');
 const { AppError, errorHandler } = require('./src/middleware/errors');
 const { sanitizeString } = require('./src/services/shared');
+const { ensureCsrfToken, issueCsrfToken, requireCsrfToken } = require('./src/middleware/csrf');
+const { maskSensitiveFields } = require('./src/services/security');
 
 tenantService.initializeTenants();
 
@@ -29,10 +31,13 @@ const API_KEY = config.auth.apiKey;
 const RATE_LIMIT_WINDOW_MS = config.rateLimit.windowMs;
 const RATE_LIMIT_MAX = config.rateLimit.max;
 const COOKIE_SECURE = config.env === 'production' || config.server.enforceHttps;
-const REFRESH_COOKIE_OPTIONS = {
-  httpOnly: true,
+const BASE_COOKIE_OPTIONS = {
   secure: COOKIE_SECURE,
-  sameSite: COOKIE_SECURE ? 'none' : 'lax',
+  sameSite: COOKIE_SECURE ? 'none' : 'lax'
+};
+const REFRESH_COOKIE_OPTIONS = {
+  ...BASE_COOKIE_OPTIONS,
+  httpOnly: true,
   path: '/v1/auth/refresh',
   maxAge: config.auth.refreshTokenTtlSeconds * 1000
 };
@@ -132,6 +137,9 @@ app.use((req, res, next) => {
   next();
 });
 
+app.use(ensureCsrfToken);
+app.use(requireCsrfToken);
+
 // Utility helpers ----------------------------------------------------------
 function requireAuth(req, res, next) {
   const header = req.headers.authorization || '';
@@ -177,7 +185,7 @@ function auditChange(req, action, entity, payload) {
     tenantId: req.tenant?.id,
     action,
     entity,
-    payload
+    payload: maskSensitiveFields(payload)
   };
   fs.appendFile(`${DATA_DIR}/audit.log`, `${JSON.stringify(auditRecord)}\n`, () => {});
 }
@@ -195,12 +203,14 @@ api.post('/auth/login', validateBody(schemas.authLogin), (req, res, next) => {
   if (!result) {
     return next(new AppError('UNAUTHORIZED', 'Invalid username or password', 401));
   }
+  const csrfToken = issueCsrfToken(res);
   res.cookie('refreshToken', result.tokens.refreshToken, REFRESH_COOKIE_OPTIONS);
   res.json({
     user: { ...result.user, tenantId: tenant },
     accessToken: result.tokens.accessToken,
     tokenType: 'Bearer',
-    expiresInSeconds: config.auth.accessTokenTtlSeconds
+    expiresInSeconds: config.auth.accessTokenTtlSeconds,
+    csrfToken
   });
 });
 
@@ -214,12 +224,14 @@ api.post('/auth/refresh', validateBody(schemas.authRefresh), (req, res, next) =>
     if (req.tenant && user.tenantId && user.tenantId !== req.tenant.id) {
       return next(new AppError('TENANT_MISMATCH', 'Refresh token tenant does not match requested tenant', 403));
     }
+    const csrfToken = issueCsrfToken(res);
     res.cookie('refreshToken', tokens.refreshToken, REFRESH_COOKIE_OPTIONS);
     res.json({
       user,
       accessToken: tokens.accessToken,
       tokenType: 'Bearer',
-      expiresInSeconds: config.auth.accessTokenTtlSeconds
+      expiresInSeconds: config.auth.accessTokenTtlSeconds,
+      csrfToken
     });
   } catch (err) {
     return next(new AppError('UNAUTHORIZED', err.message || 'Invalid refresh token', 401));
@@ -264,6 +276,9 @@ api.put('/inventory/:id', requireAuth, authorize(['admin', 'sales']), validateBo
   const result = inventoryService.update(req.params.id, req.validated.body, req.tenant.id);
   if (result.notFound) return next(new AppError('NOT_FOUND', 'Inventory not found', 404));
   auditChange(req, 'update', 'inventory', result.unit);
+  if (result.pricingChanges?.length) {
+    auditChange(req, 'price_change', 'inventory', { id: result.unit.id, changes: result.pricingChanges });
+  }
   res.json(result.unit);
 });
 

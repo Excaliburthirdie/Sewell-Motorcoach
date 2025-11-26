@@ -1,12 +1,18 @@
 const { v4: uuidv4 } = require('uuid');
 const { datasets, persist } = require('./state');
-const { sanitizePayloadStrings, validateFields } = require('./shared');
+const { escapeOutputPayload, sanitizeBoolean, sanitizePayloadStrings, validateFields } = require('./shared');
+const { maskSensitiveFields } = require('./security');
 const { attachTenant, matchesTenant, normalizeTenantId } = require('./tenantService');
 
 const VALID_LEAD_STATUSES = ['new', 'contacted', 'qualified', 'won', 'lost'];
 
+function safeLead(lead) {
+  return escapeOutputPayload(lead);
+}
+
 function findById(id, tenantId) {
-  return datasets.leads.find(l => l.id === id && matchesTenant(l.tenantId, tenantId));
+  const lead = datasets.leads.find(l => l.id === id && matchesTenant(l.tenantId, tenantId));
+  return lead ? safeLead(lead) : undefined;
 }
 
 function create(payload, tenantId) {
@@ -29,7 +35,7 @@ function create(payload, tenantId) {
   );
   datasets.leads.push(lead);
   persist.leads(datasets.leads);
-  return { lead };
+  return { lead: safeLead(lead) };
 }
 
 function update(id, payload, tenantId) {
@@ -46,7 +52,7 @@ function update(id, payload, tenantId) {
 
   datasets.leads[index] = { ...datasets.leads[index], ...updates, status };
   persist.leads(datasets.leads);
-  return { lead: datasets.leads[index] };
+  return { lead: safeLead(datasets.leads[index]) };
 }
 
 function setStatus(id, status, tenantId) {
@@ -61,7 +67,7 @@ function setStatus(id, status, tenantId) {
 
   datasets.leads[index] = { ...datasets.leads[index], status };
   persist.leads(datasets.leads);
-  return { lead: datasets.leads[index] };
+  return { lead: safeLead(datasets.leads[index]) };
 }
 
 function remove(id, tenantId) {
@@ -71,11 +77,11 @@ function remove(id, tenantId) {
   }
   const [removed] = datasets.leads.splice(index, 1);
   persist.leads(datasets.leads);
-  return { lead: removed };
+  return { lead: safeLead(removed) };
 }
 
 function list(query = {}, tenantId) {
-  const { status, sortBy = 'createdAt', sortDir = 'desc' } = query;
+  const { status, sortBy = 'createdAt', sortDir = 'desc', maskPII } = query;
   const tenant = normalizeTenantId(tenantId);
   const scoped = datasets.leads.filter(lead => matchesTenant(lead.tenantId, tenant));
   const filtered = status ? scoped.filter(lead => lead.status === status) : scoped;
@@ -88,7 +94,9 @@ function list(query = {}, tenantId) {
     return (aDate - bDate) * direction;
   });
 
-  return sorted;
+  const shouldMask = sanitizeBoolean(maskPII, false);
+  const response = shouldMask ? sorted.map(lead => maskSensitiveFields(lead)) : sorted;
+  return response.map(safeLead);
 }
 
 module.exports = {

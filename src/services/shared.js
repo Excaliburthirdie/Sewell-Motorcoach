@@ -21,7 +21,20 @@ function validateFields(payload, requiredFields = []) {
 
 function sanitizeString(value) {
   if (typeof value !== 'string') return value;
-  return value.replace(/[<>]/g, '');
+  const withoutControls = value.replace(/[\u0000-\u001F\u007F]+/g, '');
+  const withoutTags = withoutControls.replace(/<\/?script[^>]*>/gi, '').replace(/[<>]/g, '');
+  return withoutTags.trim();
+}
+
+function escapeForOutput(value) {
+  if (typeof value !== 'string') return value;
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+    .replace(/`/g, '&#96;');
 }
 
 function sanitizePayloadStrings(payload, fields = []) {
@@ -34,10 +47,21 @@ function sanitizePayloadStrings(payload, fields = []) {
   return sanitized;
 }
 
+function escapeOutputPayload(value) {
+  if (typeof value === 'string') return escapeForOutput(value);
+  if (Array.isArray(value)) return value.map(escapeOutputPayload);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([key, val]) => [key, escapeOutputPayload(val)]));
+  }
+  return value;
+}
+
 module.exports = {
   clampNumber,
   sanitizeBoolean,
   sanitizePayloadStrings,
   sanitizeString,
+  escapeOutputPayload,
+  escapeForOutput,
   validateFields
 };

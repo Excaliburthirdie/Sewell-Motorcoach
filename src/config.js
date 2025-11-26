@@ -16,7 +16,20 @@ module.exports = {
     windowMs: Number(process.env.RATE_LIMIT_WINDOW_MS || 60_000),
     max: Number(process.env.RATE_LIMIT_MAX || 300)
   },
+  csrf: {
+    enabled: process.env.CSRF_ENABLED !== 'false',
+    cookieName: process.env.CSRF_COOKIE_NAME || 'csrfToken',
+    headerName: (process.env.CSRF_HEADER_NAME || 'x-csrf-token').toLowerCase(),
+    cookieTtlSeconds: Number(process.env.CSRF_COOKIE_TTL_SECONDS || 60 * 60 * 24),
+    protectedMethods: (process.env.CSRF_PROTECTED_METHODS || 'POST,PUT,PATCH,DELETE')
+      .split(',')
+      .map(method => method.trim().toUpperCase())
+      .filter(Boolean)
+  },
   tenancy: {
     defaultTenantId: process.env.DEFAULT_TENANT_ID || 'main'
+  },
+  security: {
+    piiMaskFields: (process.env.PII_MASK_FIELDS || 'email,phone,ssn').split(',').map(f => f.trim()).filter(Boolean)
   }
 };
