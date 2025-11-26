@@ -2,6 +2,7 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const cors = require('cors');
 const fs = require('fs');
+const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 
 const config = require('./src/config');
@@ -188,6 +189,18 @@ function auditChange(req, action, entity, payload) {
     payload: maskSensitiveFields(payload)
   };
   fs.appendFile(`${DATA_DIR}/audit.log`, `${JSON.stringify(auditRecord)}\n`, () => {});
+}
+
+function checkDataDirWritable() {
+  try {
+    const probePath = path.join(DATA_DIR, '.healthcheck');
+    fs.writeFileSync(probePath, 'ok');
+    fs.unlinkSync(probePath);
+    return true;
+  } catch (err) {
+    console.error('Data directory not writable', { message: err.message });
+    return false;
+  }
 }
 
 // Routes -------------------------------------------------------------------
@@ -409,7 +422,18 @@ api.put('/settings', requireAuth, authorize(['admin']), (req, res) => {
 });
 
 api.get('/health', (req, res) => {
-  res.json({ status: 'ok', uptimeSeconds: process.uptime(), requestId: req.requestId });
+  const writable = checkDataDirWritable();
+  const status = writable ? 'ok' : 'degraded';
+  res.json({
+    status,
+    dataDirWritable: writable,
+    uptimeSeconds: process.uptime(),
+    requestId: req.requestId,
+    tenants: {
+      total: datasets.tenants.length,
+      ids: datasets.tenants.map(t => t.id)
+    }
+  });
 });
 
 api.get('/metrics', (req, res) => {
@@ -431,6 +455,10 @@ app.use('/v1', api);
 
 app.use(errorHandler);
 
-app.listen(port, () => {
-  console.log(`Server running on port ${port}`);
-});
+if (require.main === module) {
+  app.listen(port, () => {
+    console.log(`Server running on port ${port}`);
+  });
+}
+
+module.exports = app;

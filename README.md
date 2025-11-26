@@ -112,6 +112,16 @@ Unauthorized or insufficient roles return a `403` error with a structured machin
 - **Tenant-scoped resources.** Inventory, teams, reviews, leads, customers, finance offers, service tickets, and settings are
   all filtered and persisted per-tenant automatically. Metrics and audit logs include the tenant identifier for traceability.
 
+### Request headers & CSRF expectations
+
+- **Tenant header required.** Send `X-Tenant-Id` on every request (or a `tenantId` field) to ensure data isolation.
+- **CSRF cookie + header.** The API issues a `csrfToken` cookie and matching `X-CSRF-Token` response header on first contact
+  (e.g., `GET /v1/health`). Include both the cookie and header on subsequent state-changing requests.
+- **Refresh flow.** Refresh tokens are stored in the `refreshToken` HttpOnly cookie and must be accompanied by the matching
+  CSRF header when calling `POST /v1/auth/refresh`.
+- **Legacy automation.** Service-to-service calls can still use the static bearer token (`API_KEY`) when configured, but
+  browser clients should prefer JWT + CSRF for session safety.
+
 ### Validation, errors and observability
 
 - **Schema-first validation.** Every request body, query and route parameter is
@@ -210,6 +220,31 @@ dealership backend.  You may wish to extend it with the following:
 
 Feel free to tailor the code to your needs and build upon the
 foundation provided here.
+
+## Bulk import runbook
+
+Use the `/inventory/import` endpoint to seed or update listings in bulk. The importer accepts CSV with headers such as
+`stockNumber`, `vin`, `name`, `industry`, `category`, `condition`, `price`, `msrp`, `location`, and `featured`.
+
+1. Prepare a CSV file using UTF-8 encoding. A minimal row might look like:
+
+   ```csv
+   stockNumber,vin,name,industry,category,condition,price,msrp,location,featured
+   D3350,1FADP3E20FL123456,Georgetown GT5 35K7,RV,Motorhome,new,189999,214999,lexington,true
+   ```
+
+2. Include your tenant in the request as `X-Tenant-Id` or `tenantId` to keep data scoped correctly.
+3. POST the CSV file using multipart form data to `/v1/inventory/import` with the file field named `file`.
+4. Verify the response for any rejected rows. Common issues include missing VIN/stock numbers, unsupported `condition`
+   values, or duplicate VINs within the same tenant.
+5. If the importer reports validation errors, correct the CSV and re-run the request. Partial successes are persisted;
+   failed rows are returned with error messages for quick remediation.
+
+Troubleshooting tips:
+
+- Ensure CSV headers exactly match the fields expected by the importer.
+- Normalize `condition` values to one of `new`, `used`, `demo`, or `pending_sale`.
+- When testing locally, remove cached uploads between runs to avoid stale files and reset tenants with fresh fixtures if needed.
 
 ## 100 must-have capabilities for a best-in-class RV dealership backend
 

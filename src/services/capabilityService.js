@@ -1,6 +1,9 @@
 const { datasets, persist } = require('./state');
 const { clampNumber } = require('./shared');
 
+const CACHE_TTL_MS = 30_000;
+const cache = new Map();
+
 function normalizeCapabilities() {
   datasets.capabilities = datasets.capabilities.map((capability, idx) => ({
     id: capability.id || idx + 1,
@@ -9,9 +12,17 @@ function normalizeCapabilities() {
     area: capability.area || 'core'
   }));
   persist.capabilities(datasets.capabilities);
+  invalidateCache();
 }
 
 function list({ search, limit, offset }) {
+  const key = JSON.stringify({ search, limit, offset });
+  const now = Date.now();
+  const cached = cache.get(key);
+  if (cached && cached.expiresAt > now) {
+    return cached.value;
+  }
+
   const filtered = datasets.capabilities.filter(capability => {
     if (!search) return true;
     return capability.description.toLowerCase().includes(search.toLowerCase());
@@ -20,7 +31,9 @@ function list({ search, limit, offset }) {
   const start = clampNumber(offset, 0);
   const end = limit ? start + clampNumber(limit, filtered.length) : filtered.length;
 
-  return { total: filtered.length, items: filtered.slice(start, end) };
+  const value = { total: filtered.length, items: filtered.slice(start, end) };
+  cache.set(key, { value, expiresAt: now + CACHE_TTL_MS });
+  return value;
 }
 
 function getById(id) {
@@ -37,10 +50,15 @@ function status() {
   };
 }
 
+function invalidateCache() {
+  cache.clear();
+}
+
 module.exports = {
   datasets,
   normalizeCapabilities,
   list,
   getById,
-  status
+  status,
+  invalidateCache
 };
