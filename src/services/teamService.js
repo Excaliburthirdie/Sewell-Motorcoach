@@ -1,6 +1,18 @@
 const { v4: uuidv4 } = require('uuid');
 const { datasets, persist } = require('./state');
 const { validateFields } = require('./shared');
+const { attachTenant, matchesTenant, normalizeTenantId } = require('./tenantService');
+
+function list(tenantId) {
+  const tenant = normalizeTenantId(tenantId);
+  return datasets.teams.filter(team => matchesTenant(team.tenantId, tenant));
+}
+
+function findById(id, tenantId) {
+  return datasets.teams.find(t => t.id === id && matchesTenant(t.tenantId, tenantId));
+}
+
+function create(payload, tenantId) {
 
 function list() {
   return datasets.teams;
@@ -23,12 +35,15 @@ function create(payload) {
       }))
     : [];
 
+  const team = attachTenant({ id: uuidv4(), members, ...payload }, tenantId);
   const team = { id: uuidv4(), members, ...payload };
   datasets.teams.push(team);
   persist.teams(datasets.teams);
   return { team };
 }
 
+function update(id, payload, tenantId) {
+  const index = datasets.teams.findIndex(t => t.id === id && matchesTenant(t.tenantId, tenantId));
 function update(id, payload) {
   const index = datasets.teams.findIndex(t => t.id === id);
   if (index === -1) {
@@ -47,6 +62,8 @@ function update(id, payload) {
   return { team: datasets.teams[index] };
 }
 
+function remove(id, tenantId) {
+  const index = datasets.teams.findIndex(t => t.id === id && matchesTenant(t.tenantId, tenantId));
 function remove(id) {
   const index = datasets.teams.findIndex(t => t.id === id);
   if (index === -1) {
@@ -57,6 +74,16 @@ function remove(id) {
   return { team: removed };
 }
 
+function roles(tenantId) {
+  const tenant = normalizeTenantId(tenantId);
+  const roleSet = new Set();
+  datasets.teams
+    .filter(team => matchesTenant(team.tenantId, tenant))
+    .forEach(team => {
+      team.members?.forEach(member => {
+        if (member.jobRole) roleSet.add(member.jobRole);
+      });
+    });
 function roles() {
   const roleSet = new Set();
   datasets.teams.forEach(team => {

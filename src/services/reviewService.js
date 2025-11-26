@@ -1,6 +1,18 @@
 const { v4: uuidv4 } = require('uuid');
 const { datasets, persist } = require('./state');
 const { clampNumber, sanitizeBoolean, validateFields } = require('./shared');
+const { attachTenant, matchesTenant, normalizeTenantId } = require('./tenantService');
+
+function list(tenantId) {
+  const tenant = normalizeTenantId(tenantId);
+  return datasets.reviews.filter(review => matchesTenant(review.tenantId, tenant));
+}
+
+function findById(id, tenantId) {
+  return datasets.reviews.find(r => r.id === id && matchesTenant(r.tenantId, tenantId));
+}
+
+function create(payload, tenantId) {
 
 function list() {
   return datasets.reviews;
@@ -21,6 +33,16 @@ function create(payload) {
     return { error: 'Rating must be between 1 and 5' };
   }
 
+  const review = attachTenant(
+    {
+      id: uuidv4(),
+      visible: sanitizeBoolean(payload.visible, true),
+      createdAt: new Date().toISOString(),
+      rating,
+      ...payload
+    },
+    tenantId
+  );
   const review = {
     id: uuidv4(),
     visible: sanitizeBoolean(payload.visible, true),
@@ -34,6 +56,8 @@ function create(payload) {
   return { review };
 }
 
+function update(id, payload, tenantId) {
+  const index = datasets.reviews.findIndex(r => r.id === id && matchesTenant(r.tenantId, tenantId));
 function update(id, payload) {
   const index = datasets.reviews.findIndex(r => r.id === id);
   if (index === -1) {
@@ -55,6 +79,8 @@ function update(id, payload) {
   return { review: datasets.reviews[index] };
 }
 
+function toggleVisibility(id, visible, tenantId) {
+  const index = datasets.reviews.findIndex(r => r.id === id && matchesTenant(r.tenantId, tenantId));
 function toggleVisibility(id, visible) {
   const index = datasets.reviews.findIndex(r => r.id === id);
   if (index === -1) {
@@ -69,6 +95,8 @@ function toggleVisibility(id, visible) {
   return { review: datasets.reviews[index] };
 }
 
+function remove(id, tenantId) {
+  const index = datasets.reviews.findIndex(r => r.id === id && matchesTenant(r.tenantId, tenantId));
 function remove(id) {
   const index = datasets.reviews.findIndex(r => r.id === id);
   if (index === -1) {
@@ -79,6 +107,9 @@ function remove(id) {
   return { review: removed };
 }
 
+function summary(tenantId) {
+  const scoped = datasets.reviews.filter(r => matchesTenant(r.tenantId, tenantId));
+  const visibleReviews = scoped.filter(r => r.visible !== false);
 function summary() {
   const visibleReviews = datasets.reviews.filter(r => r.visible !== false);
   const averageRating =
@@ -87,6 +118,7 @@ function summary() {
       : 0;
 
   return {
+    total: scoped.length,
     total: datasets.reviews.length,
     visible: visibleReviews.length,
     averageRating

@@ -6,6 +6,10 @@
     "apr": 5.25,
     "downPayment": 10000,
     "restrictions": "Model year 2016+ only",
+    "vehicleCategory": "Motorhome",
+    "tenantId": "main"
+  }
+]
     "vehicleCategory": "Motorhome"
   }
 ]

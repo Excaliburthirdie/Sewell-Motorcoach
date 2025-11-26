@@ -12,7 +12,8 @@
     "location": "Harrodsburg, KY",
     "daysOnLot": 0,
     "images": [],
-    "featured": true
+    "featured": true,
+    "tenantId": "main"
   },
   {
     "id": "2",
@@ -27,6 +28,7 @@
     "location": "Harrodsburg, KY",
     "daysOnLot": 10,
     "images": [],
-    "featured": false
+    "featured": false,
+    "tenantId": "main"
   }
 ]

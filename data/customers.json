@@ -7,6 +7,10 @@
     "phone": "555-1000",
     "preferredContactMethod": "email",
     "marketingOptIn": true,
+    "notes": "Interested in Class A diesel pushers",
+    "tenantId": "main"
+  }
+]
     "notes": "Interested in Class A diesel pushers"
   }
 ]

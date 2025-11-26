@@ -1,6 +1,15 @@
 const { v4: uuidv4 } = require('uuid');
 const { datasets, persist } = require('./state');
 const { sanitizePayloadStrings, validateFields } = require('./shared');
+const { attachTenant, matchesTenant, normalizeTenantId } = require('./tenantService');
+
+const VALID_LEAD_STATUSES = ['new', 'contacted', 'qualified', 'won', 'lost'];
+
+function findById(id, tenantId) {
+  return datasets.leads.find(l => l.id === id && matchesTenant(l.tenantId, tenantId));
+}
+
+function create(payload, tenantId) {
 
 const VALID_LEAD_STATUSES = ['new', 'contacted', 'qualified', 'won', 'lost'];
 
@@ -16,18 +25,22 @@ function create(payload) {
 
   const body = sanitizePayloadStrings(payload, ['name', 'email', 'message', 'subject']);
 
+  const lead = attachTenant({
   const lead = {
     id: uuidv4(),
     createdAt: new Date().toISOString(),
     status: VALID_LEAD_STATUSES.includes(body.status) ? body.status : 'new',
     subject: body.subject || 'General inquiry',
     ...body
+  }, tenantId);
   };
   datasets.leads.push(lead);
   persist.leads(datasets.leads);
   return { lead };
 }
 
+function update(id, payload, tenantId) {
+  const index = datasets.leads.findIndex(l => l.id === id && matchesTenant(l.tenantId, tenantId));
 function update(id, payload) {
   const index = datasets.leads.findIndex(l => l.id === id);
   if (index === -1) {
@@ -45,6 +58,8 @@ function update(id, payload) {
   return { lead: datasets.leads[index] };
 }
 
+function setStatus(id, status, tenantId) {
+  const index = datasets.leads.findIndex(l => l.id === id && matchesTenant(l.tenantId, tenantId));
 function setStatus(id, status) {
   const index = datasets.leads.findIndex(l => l.id === id);
   if (index === -1) {
@@ -60,6 +75,8 @@ function setStatus(id, status) {
   return { lead: datasets.leads[index] };
 }
 
+function remove(id, tenantId) {
+  const index = datasets.leads.findIndex(l => l.id === id && matchesTenant(l.tenantId, tenantId));
 function remove(id) {
   const index = datasets.leads.findIndex(l => l.id === id);
   if (index === -1) {
@@ -70,6 +87,11 @@ function remove(id) {
   return { lead: removed };
 }
 
+function list(query = {}, tenantId) {
+  const { status, sortBy = 'createdAt', sortDir = 'desc' } = query;
+  const tenant = normalizeTenantId(tenantId);
+  const scoped = datasets.leads.filter(lead => matchesTenant(lead.tenantId, tenant));
+  const filtered = status ? scoped.filter(lead => lead.status === status) : scoped;
 function list(query = {}) {
   const { status, sortBy = 'createdAt', sortDir = 'desc' } = query;
   const filtered = status ? datasets.leads.filter(lead => lead.status === status) : datasets.leads;

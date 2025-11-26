@@ -34,7 +34,12 @@ HTTP.
    npm install
    ```
 
-3. **Start the server.**  The default port is `3000`, but you can set
+3. **Configure environment.** Copy `.env.example` to `.env` and set secrets
+   such as `JWT_SECRET`, `API_KEY`, and `DEFAULT_TENANT_ID` for your
+   dealership locations. The app also respects process environment variables
+   directly when running in containerised or hosted environments.
+
+4. **Start the server.**  The default port is `3000`, but you can set
    the `PORT` environment variable to change it:
 
    ```sh
@@ -57,12 +62,82 @@ HTTP.
 ### Endpoints
 
 All endpoints are available both at the root and under `/v1` for versioned
+consumption. Protected requests now support JWT-based authentication with
+refresh token rotation while still honoring the legacy static bearer token
+(`API_KEY`) for compatibility.
+
+### Authentication & session lifecycle
+
+- **Login:** `POST /auth/login` with `{ "username": "dealer-admin", "password": "password123" }` (default
+  seed user). Returns an `accessToken` (short-lived) and `refreshToken` (long-lived).
+- **Refresh:** `POST /auth/refresh` with `{ "refreshToken": "<token>" }` to rotate refresh tokens and issue a new
+  access token. The previous refresh token is revoked when a new one is issued.
+- **Logout/Revoke:** `POST /auth/logout` with the refresh token to revoke it explicitly.
+- **Whoami:** `GET /auth/me` returns the authenticated principal using the supplied bearer token.
+
+#### Auth configuration
+
+- `JWT_SECRET` – required in production; used to sign access and refresh tokens (default: `change-me-in-prod`).
+- `ACCESS_TOKEN_TTL_SECONDS` – lifetime for access tokens (default: `900`).
+- `REFRESH_TOKEN_TTL_SECONDS` – lifetime for refresh tokens with rotation (default: 7 days).
+- `PASSWORD_SALT` – salt used to hash seed user passwords; default aligns with the bundled seed user.
+- `API_KEY` – optional static bearer token for service-to-service or legacy automation calls.
+
+#### Role-based access control
+
+Seed users are provided for local testing:
+
+- `dealer-admin` / `password123` – role: `admin` (full access)
+- `sales-lead` / `sales123` – role: `sales` (inventory + leads)
+- `marketing-ops` / `marketing123` – role: `marketing` (reviews, teams, leads)
+
+Protected routes enforce the following role matrix:
+
+- **Inventory** create/update/feature: `admin`, `sales`; delete: `admin`.
+- **Teams** create/update/delete: `admin`, `marketing`.
+- **Reviews** create/update/delete/visibility: `admin`, `marketing`.
+- **Leads** create/update/status/delete: `admin`, `sales`, `marketing`.
+- **Settings** update: `admin`.
+
+Unauthorized or insufficient roles return a `403` error with a structured machine-readable error code.
+
+### Multi-tenancy for dealership groups
+
+- **Tenant resolution.** Supply `X-Tenant-Id` (or a `tenantId` query/body field) on every request to scope reads and writes to a
+  specific dealership location. Requests without a tenant default to `main`.
+- **Seed tenants.** Two locations are provided out of the box: `main` (Harrodsburg) and `lexington`. Add more by editing
+  `data/tenants.json`.
+- **Tenant-aware auth.** Login and refresh tokens encode the tenant, and protected endpoints enforce that the bearer token’s
+  tenant matches the requested tenant to prevent cross-location data leakage.
+- **Tenant-scoped resources.** Inventory, teams, reviews, leads, customers, finance offers, service tickets, and settings are
+  all filtered and persisted per-tenant automatically. Metrics and audit logs include the tenant identifier for traceability.
+
+### Validation, errors and observability
+
+- **Schema-first validation.** Every request body, query and route parameter is
+  validated with reusable schemas before entering business logic to keep data
+  consistent and predictable across the API surface.
+- **Machine-readable errors.** Failures return a JSON payload with an error
+  `code`, human-readable `message` and the `requestId` that traces the request
+  end-to-end.
+- **Correlation-aware logging.** Requests and errors are logged as structured
+  JSON with log levels, durations and correlation IDs so you can trace
+  cross-service flows quickly.
+- **Rate limiting.** Public endpoints are protected by a configurable
+  window/max limiter that returns a standardized error code when exceeded.
+- **HTTPS enforcement.** When `ENFORCE_HTTPS=true`, the API rejects downgraded
+  traffic and sends HSTS headers (`Strict-Transport-Security`) with the
+  configured max-age for secure deployments.
 consumption.  Mutating requests (POST/PUT/PATCH/DELETE) can optionally be
 protected with a static bearer token by setting the `API_KEY` environment
 variable before starting the server.
 
 | Method | Endpoint         | Purpose                                     |
 |-------:|------------------|---------------------------------------------|
+|  POST  | `/auth/login`    | Obtain JWT access and refresh tokens        |
+|  POST  | `/auth/refresh`  | Rotate refresh token and get new access     |
+|  POST  | `/auth/logout`   | Revoke a refresh token                      |
+|  GET   | `/auth/me`       | Return the authenticated principal          |
 |  GET   | `/inventory`     | List all inventory units                     |
 |  GET   | `/inventory/:id` | Retrieve a single unit by ID                |
 |  POST  | `/inventory`     | Create a new unit                           |
