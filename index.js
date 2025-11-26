@@ -255,8 +255,18 @@ api.get('/capabilities/status', (req, res) => {
   res.json(capabilityService.status());
 });
 
-api.get('/inventory', (req, res) => {
-  res.json(inventoryService.list(req.query, req.tenant.id));
+api.get('/inventory', validateQuery(schemas.inventoryListQuery), (req, res) => {
+  res.json(inventoryService.list(req.validated.query, req.tenant.id));
+});
+
+api.get('/inventory/stats', (req, res) => {
+  res.json(inventoryService.stats(req.tenant.id));
+});
+
+api.get('/inventory/slug/:slug', (req, res, next) => {
+  const unit = inventoryService.findBySlug(req.params.slug, req.tenant.id);
+  if (!unit) return next(new AppError('NOT_FOUND', 'Inventory not found', 404));
+  res.json(unit);
 });
 
 api.get('/inventory/:id', validateParams(schemas.inventoryId), (req, res, next) => {
@@ -275,6 +285,7 @@ api.post('/inventory', requireAuth, authorize(['admin', 'sales']), validateBody(
 api.put('/inventory/:id', requireAuth, authorize(['admin', 'sales']), validateBody(schemas.inventoryUpdate), (req, res, next) => {
   const result = inventoryService.update(req.params.id, req.validated.body, req.tenant.id);
   if (result.notFound) return next(new AppError('NOT_FOUND', 'Inventory not found', 404));
+  if (result.error) return next(new AppError('VALIDATION_ERROR', result.error, 400));
   auditChange(req, 'update', 'inventory', result.unit);
   if (result.pricingChanges?.length) {
     auditChange(req, 'price_change', 'inventory', { id: result.unit.id, changes: result.pricingChanges });

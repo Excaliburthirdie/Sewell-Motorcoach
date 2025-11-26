@@ -23,12 +23,15 @@ const capabilityListQuery = paginationSchema.extend({
   tenantId: z.string().trim().min(1).optional()
 });
 
+const INVENTORY_CONDITIONS = ['new', 'used', 'demo', 'pending_sale'];
+
 const inventoryListQuery = paginationSchema.extend({
   industry: z.string().trim().optional(),
   category: z.string().trim().optional(),
   subcategory: z.string().trim().optional(),
-  condition: z.string().trim().optional(),
+  condition: z.enum(INVENTORY_CONDITIONS).optional(),
   location: z.string().trim().optional(),
+  transferStatus: z.enum(['available', 'in_transit', 'on_hold']).optional(),
   featured: z
     .union([z.boolean(), z.string()])
     .optional()
@@ -53,19 +56,41 @@ const inventoryListQuery = paginationSchema.extend({
 
 const inventoryBase = z.object({
   stockNumber: z.string().trim(),
+  vin: z
+    .string()
+    .trim()
+    .min(11)
+    .max(17)
+    .transform(val => val.toUpperCase()),
   name: z.string().trim(),
-  condition: z.string().trim(),
+  condition: z.enum(INVENTORY_CONDITIONS),
   price: z.union([z.number(), z.string()]).transform(val => Number(val)),
   msrp: z.union([z.number(), z.string()]).optional().transform(val => (val === undefined ? undefined : Number(val))),
   salePrice: z.union([z.number(), z.string()]).optional().transform(val => (val === undefined ? undefined : Number(val))),
+  rebates: z.union([z.number(), z.string()]).optional().transform(val => (val === undefined ? undefined : Number(val))),
+  fees: z.union([z.number(), z.string()]).optional().transform(val => (val === undefined ? undefined : Number(val))),
+  taxes: z.union([z.number(), z.string()]).optional().transform(val => (val === undefined ? undefined : Number(val))),
+  year: z.union([z.number(), z.string()]).optional().transform(val => (val === undefined ? undefined : Number(val))),
+  length: z.union([z.number(), z.string()]).optional().transform(val => (val === undefined ? undefined : Number(val))),
+  weight: z.union([z.number(), z.string()]).optional().transform(val => (val === undefined ? undefined : Number(val))),
+  chassis: z.string().trim().optional(),
   industry: z.string().trim().optional(),
   category: z.string().trim().optional(),
   subcategory: z.string().trim().optional(),
   location: z.string().trim().optional(),
+  lotCode: z.string().trim().optional(),
+  transferStatus: z.enum(['available', 'in_transit', 'on_hold']).optional(),
+  holdUntil: z.string().trim().optional(),
   daysOnLot: z.union([z.number(), z.string()]).optional().transform(val => (val === undefined ? undefined : Number(val))),
   images: z.array(z.string().url()).optional(),
+  floorplans: z.array(z.string().url()).optional(),
+  virtualTours: z.array(z.string().url()).optional(),
+  videoLinks: z.array(z.string().url()).optional(),
   featured: z.boolean().optional(),
-  description: z.string().trim().optional()
+  description: z.string().trim().optional(),
+  slug: z.string().trim().min(3).optional(),
+  metaTitle: z.string().trim().optional(),
+  metaDescription: z.string().trim().optional()
 });
 
 const inventoryCreate = inventoryBase;
@@ -104,7 +129,15 @@ const leadCreate = z.object({
   message: z.string().trim(),
   subject: z.string().trim().optional(),
   status: z.enum(VALID_LEAD_STATUSES).optional(),
-  interestedStockNumber: z.string().trim().optional()
+  interestedStockNumber: z.string().trim().optional(),
+  assignedTo: z.string().trim().optional(),
+  dueDate: z.string().trim().optional(),
+  lastContactedAt: z.string().trim().optional(),
+  utmSource: z.string().trim().optional(),
+  utmMedium: z.string().trim().optional(),
+  utmCampaign: z.string().trim().optional(),
+  utmTerm: z.string().trim().optional(),
+  referrer: z.string().trim().optional()
 });
 const leadUpdate = leadCreate.partial();
 const leadStatusUpdate = z.object({ status: z.enum(VALID_LEAD_STATUSES) });
@@ -130,6 +163,7 @@ const settingsUpdate = z.object({
 });
 
 const idParam = z.object({ id: z.string().trim().min(1) });
+const inventoryId = idParam;
 
 const authLogin = z.object({
   username: z.string().trim().min(1),
@@ -159,7 +193,11 @@ module.exports = {
     leadStatusUpdate,
     settingsUpdate,
     idParam,
+    inventoryId,
     authLogin,
     authRefresh
+  },
+  constants: {
+    INVENTORY_CONDITIONS
   }
 };
