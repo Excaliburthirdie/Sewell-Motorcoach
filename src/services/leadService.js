@@ -10,14 +10,6 @@ function findById(id, tenantId) {
 }
 
 function create(payload, tenantId) {
-
-const VALID_LEAD_STATUSES = ['new', 'contacted', 'qualified', 'won', 'lost'];
-
-function findById(id) {
-  return datasets.leads.find(l => l.id === id);
-}
-
-function create(payload) {
   const requiredError = validateFields(payload, ['name', 'email', 'message']);
   if (requiredError) {
     return { error: requiredError };
@@ -25,15 +17,16 @@ function create(payload) {
 
   const body = sanitizePayloadStrings(payload, ['name', 'email', 'message', 'subject']);
 
-  const lead = attachTenant({
-  const lead = {
-    id: uuidv4(),
-    createdAt: new Date().toISOString(),
-    status: VALID_LEAD_STATUSES.includes(body.status) ? body.status : 'new',
-    subject: body.subject || 'General inquiry',
-    ...body
-  }, tenantId);
-  };
+  const lead = attachTenant(
+    {
+      id: uuidv4(),
+      createdAt: new Date().toISOString(),
+      status: VALID_LEAD_STATUSES.includes(body.status) ? body.status : 'new',
+      subject: body.subject || 'General inquiry',
+      ...body
+    },
+    tenantId
+  );
   datasets.leads.push(lead);
   persist.leads(datasets.leads);
   return { lead };
@@ -41,8 +34,6 @@ function create(payload) {
 
 function update(id, payload, tenantId) {
   const index = datasets.leads.findIndex(l => l.id === id && matchesTenant(l.tenantId, tenantId));
-function update(id, payload) {
-  const index = datasets.leads.findIndex(l => l.id === id);
   if (index === -1) {
     return { notFound: true };
   }
@@ -60,8 +51,6 @@ function update(id, payload) {
 
 function setStatus(id, status, tenantId) {
   const index = datasets.leads.findIndex(l => l.id === id && matchesTenant(l.tenantId, tenantId));
-function setStatus(id, status) {
-  const index = datasets.leads.findIndex(l => l.id === id);
   if (index === -1) {
     return { notFound: true };
   }
@@ -77,8 +66,6 @@ function setStatus(id, status) {
 
 function remove(id, tenantId) {
   const index = datasets.leads.findIndex(l => l.id === id && matchesTenant(l.tenantId, tenantId));
-function remove(id) {
-  const index = datasets.leads.findIndex(l => l.id === id);
   if (index === -1) {
     return { notFound: true };
   }
@@ -92,9 +79,6 @@ function list(query = {}, tenantId) {
   const tenant = normalizeTenantId(tenantId);
   const scoped = datasets.leads.filter(lead => matchesTenant(lead.tenantId, tenant));
   const filtered = status ? scoped.filter(lead => lead.status === status) : scoped;
-function list(query = {}) {
-  const { status, sortBy = 'createdAt', sortDir = 'desc' } = query;
-  const filtered = status ? datasets.leads.filter(lead => lead.status === status) : datasets.leads;
 
   const sorted = [...filtered].sort((a, b) => {
     const direction = sortDir === 'asc' ? 1 : -1;

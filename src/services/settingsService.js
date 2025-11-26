@@ -1,63 +1,32 @@
 const { datasets, persist } = require('./state');
-const { validateFields } = require('./shared');
-const { attachTenant, matchesTenant, normalizeTenantId, DEFAULT_TENANT_ID } = require('./tenantService');
+const { sanitizePayloadStrings } = require('./shared');
+const { matchesTenant } = require('./tenantService');
 
-function get(tenantId) {
-  const tenant = normalizeTenantId(tenantId);
-  return (
-    datasets.settings.find(entry => matchesTenant(entry.tenantId, tenant)) ||
-    datasets.settings.find(entry => matchesTenant(entry.tenantId, DEFAULT_TENANT_ID))
-  );
+function getForTenant(tenantId) {
+  return datasets.settings.find(setting => matchesTenant(setting.tenantId, tenantId)) || datasets.settings[0];
 }
 
 function update(payload, tenantId) {
+  const index = datasets.settings.findIndex(setting => matchesTenant(setting.tenantId, tenantId));
+  const hours = payload.hours || datasets.settings[index]?.hours;
+  const sanitized = sanitizePayloadStrings(payload, ['dealershipName', 'address', 'city', 'state', 'zip', 'country', 'currency', 'phone', 'email']);
 
-function get() {
-  return datasets.settings;
-}
-
-function update(payload) {
-  const requiredError = validateFields(payload, ['dealershipName', 'phone']);
-  if (requiredError) {
-    return { error: requiredError };
-  }
-
-  const tenant = normalizeTenantId(tenantId);
-  const index = datasets.settings.findIndex(entry => matchesTenant(entry.tenantId, tenant));
-  const base = index === -1 ? attachTenant({}, tenant) : datasets.settings[index];
-  const hours = payload.hours || base.hours || {};
-
-  const merged = {
-    ...base,
-    ...payload,
-    hours: {
-      ...base.hours,
-      ...hours
-    }
+  const updated = {
+    ...(datasets.settings[index] || {}),
+    ...sanitized,
+    hours
   };
 
   if (index === -1) {
-    datasets.settings.push(merged);
+    datasets.settings.push(updated);
   } else {
-    datasets.settings[index] = merged;
+    datasets.settings[index] = updated;
   }
-
   persist.settings(datasets.settings);
-  return { settings: merged };
-  const hours = payload.hours || datasets.settings.hours;
-  datasets.settings = {
-    ...datasets.settings,
-    ...payload,
-    hours: {
-      ...datasets.settings.hours,
-      ...hours
-    }
-  };
-  persist.settings(datasets.settings);
-  return { settings: datasets.settings };
+  return { settings: updated };
 }
 
 module.exports = {
-  get,
+  getForTenant,
   update
 };

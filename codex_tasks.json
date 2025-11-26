@@ -22,106 +22,84 @@
     "text": "Centralized validation layer with reusable schemas for every endpoint.",
     "status": "done",
     "note": "Added schema-driven validation middleware and reusable request schemas across endpoints."
-    "status": "pending",
-    "note": ""
   },
   {
     "id": 5,
     "text": "Strong typing via TypeScript or a schema-first tool like OpenAPI or Zod.",
     "status": "done",
     "note": "Adopted zodLite schema definitions to enforce typed payloads and queries for all routes."
-    "status": "pending",
-    "note": ""
   },
   {
     "id": 6,
     "text": "Consistent error-handling middleware with machine-readable error codes.",
     "status": "done",
     "note": "Introduced centralized AppError handler emitting machine-readable codes with request ids."
-    "status": "pending",
-    "note": ""
   },
   {
     "id": 7,
     "text": "Request correlation IDs for tracing complex user journeys across services.",
     "status": "done",
     "note": "Request correlation ids now flow through responses, audits, and error logs for tracing."
-    "status": "pending",
-    "note": ""
   },
   {
     "id": 8,
     "text": "Structured JSON logging with log levels and request context metadata.",
     "status": "done",
     "note": "Structured JSON request/response logging with log levels and context metadata."
-    "status": "pending",
-    "note": ""
   },
   {
     "id": 9,
     "text": "Configurable rate limiting to protect public endpoints from abuse.",
     "status": "done",
     "note": "Rate limiter now surfaces standardized error codes using existing configurable window and max settings."
-    "status": "pending",
-    "note": ""
   },
   {
     "id": 10,
     "text": "Built-in JWT or OAuth2 authentication with refresh token rotation.",
     "status": "done",
     "note": "Implemented JWT login/refresh/logout endpoints with rotating refresh tokens and bearer auth enforcement."
-    "status": "pending",
-    "note": ""
   },
   {
     "id": 11,
     "text": "Role-based access control with granular permissions per resource.",
     "status": "done",
     "note": "Enforced role-based permissions across protected routes with seeded admin/sales/marketing accounts."
-    "status": "pending",
-    "note": ""
   },
   {
     "id": 12,
     "text": "Multi-tenancy support for multi-location dealership groups.",
     "status": "done",
     "note": "Added tenant resolution middleware, tenant-aware auth tokens, per-tenant filtering/persistence, and seed tenants."
-    "status": "pending",
-    "note": ""
   },
   {
     "id": 13,
     "text": "Environment-based configuration management with secrets stored securely.",
     "status": "done",
     "note": "Centralized configuration module with .env example covering auth, tenancy, rate limits, and HTTPS settings."
-    "status": "pending",
-    "note": ""
   },
   {
     "id": 14,
     "text": "HTTPS enforcement and HSTS headers for all deployed environments.",
     "status": "done",
     "note": "Added HSTS headers and configurable HTTPS enforcement controlled via env-driven config."
-    "status": "pending",
-    "note": ""
   },
   {
     "id": 15,
     "text": "Input sanitization and output escaping to mitigate injection risks.",
-    "status": "pending",
-    "note": ""
+    "status": "done",
+    "note": "Input sanitization middleware cleans body/query/params."
   },
   {
     "id": 16,
     "text": "CSRF protection for browser-based consumers.",
-    "status": "pending",
-    "note": ""
+    "status": "done",
+    "note": "Added double-submit CSRF token cookie and header validation for unsafe methods."
   },
   {
     "id": 17,
     "text": "Secure cookie settings with SameSite and HttpOnly flags where applicable.",
-    "status": "pending",
-    "note": ""
+    "status": "done",
+    "note": "Refresh cookies use secure/httpOnly with SameSite based on env."
   },
   {
     "id": 18,
@@ -132,8 +110,8 @@
   {
     "id": 19,
     "text": "Audit logging for changes to sensitive data such as pricing and discounts.",
-    "status": "pending",
-    "note": ""
+    "status": "done",
+    "note": "Audit logging now captures user context for price-affecting inventory changes."
   },
   {
     "id": 20,
@@ -156,20 +134,20 @@
   {
     "id": 23,
     "text": "Inventory schema that tracks VIN, year, length, weight and chassis details.",
-    "status": "pending",
-    "note": ""
+    "status": "done",
+    "note": "Inventory schema now tracks VIN, year, length, weight, chassis fields."
   },
   {
     "id": 24,
     "text": "Support for multiple condition states (new, used, demo, pending sale).",
-    "status": "pending",
-    "note": ""
+    "status": "done",
+    "note": "Condition limited to new/used/demo/pending_sale."
   },
   {
     "id": 25,
     "text": "Pricing fields for MSRP, sale price, rebates, taxes and fees.",
-    "status": "pending",
-    "note": ""
+    "status": "done",
+    "note": "Pricing fields expanded to msrp/salePrice/rebates/taxes/fees with validation."
   },
   {
     "id": 26,

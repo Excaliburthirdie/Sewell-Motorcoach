@@ -4,8 +4,6 @@ const { clampNumber, sanitizeBoolean, validateFields } = require('./shared');
 const { attachTenant, matchesTenant, normalizeTenantId } = require('./tenantService');
 
 function list(query = {}, tenantId) {
-
-function list(query = {}) {
   const {
     industry,
     category,
@@ -23,10 +21,8 @@ function list(query = {}) {
   } = query;
 
   const tenant = normalizeTenantId(tenantId);
-
   const filtered = datasets.inventory
     .filter(unit => matchesTenant(unit.tenantId, tenant))
-  const filtered = datasets.inventory
     .filter(unit => !industry || unit.industry === industry)
     .filter(unit => !category || unit.category === category)
     .filter(unit => !subcategory || unit.subcategory === subcategory)
@@ -67,25 +63,30 @@ function findById(id, tenantId) {
 }
 
 function create(payload, tenantId) {
-function findById(id) {
-  return datasets.inventory.find(u => u.id === id);
-}
-
-function create(payload) {
-  const requiredError = validateFields(payload, ['stockNumber', 'name', 'condition', 'price']);
+  const requiredError = validateFields(payload, ['stockNumber', 'name', 'condition', 'price', 'vin', 'year']);
   if (requiredError) {
     return { error: requiredError };
   }
 
-  const unit = attachTenant({
-  const unit = {
-    id: uuidv4(),
-    featured: sanitizeBoolean(payload.featured, false),
-    createdAt: new Date().toISOString(),
-    images: Array.isArray(payload.images) ? payload.images : [],
-    ...payload
-  }, tenantId);
-  };
+  const unit = attachTenant(
+    {
+      id: uuidv4(),
+      featured: sanitizeBoolean(payload.featured, false),
+      createdAt: new Date().toISOString(),
+      images: Array.isArray(payload.images) ? payload.images : [],
+      price: Number(payload.price),
+      msrp: payload.msrp !== undefined ? Number(payload.msrp) : undefined,
+      salePrice: payload.salePrice !== undefined ? Number(payload.salePrice) : undefined,
+      rebates: payload.rebates !== undefined ? Number(payload.rebates) : undefined,
+      taxes: payload.taxes !== undefined ? Number(payload.taxes) : undefined,
+      fees: payload.fees !== undefined ? Number(payload.fees) : undefined,
+      year: Number(payload.year),
+      length: payload.length !== undefined ? Number(payload.length) : undefined,
+      weight: payload.weight !== undefined ? Number(payload.weight) : undefined,
+      ...payload
+    },
+    tenantId
+  );
 
   datasets.inventory.push(unit);
   persist.inventory(datasets.inventory);
@@ -94,8 +95,6 @@ function create(payload) {
 
 function update(id, payload, tenantId) {
   const index = datasets.inventory.findIndex(u => u.id === id && matchesTenant(u.tenantId, tenantId));
-function update(id, payload) {
-  const index = datasets.inventory.findIndex(u => u.id === id);
   if (index === -1) {
     return { notFound: true };
   }
@@ -103,7 +102,16 @@ function update(id, payload) {
   const updated = {
     ...datasets.inventory[index],
     ...payload,
-    featured: sanitizeBoolean(payload.featured, datasets.inventory[index].featured)
+    featured: sanitizeBoolean(payload.featured, datasets.inventory[index].featured),
+    price: payload.price !== undefined ? Number(payload.price) : datasets.inventory[index].price,
+    msrp: payload.msrp !== undefined ? Number(payload.msrp) : datasets.inventory[index].msrp,
+    salePrice: payload.salePrice !== undefined ? Number(payload.salePrice) : datasets.inventory[index].salePrice,
+    rebates: payload.rebates !== undefined ? Number(payload.rebates) : datasets.inventory[index].rebates,
+    taxes: payload.taxes !== undefined ? Number(payload.taxes) : datasets.inventory[index].taxes,
+    fees: payload.fees !== undefined ? Number(payload.fees) : datasets.inventory[index].fees,
+    year: payload.year !== undefined ? Number(payload.year) : datasets.inventory[index].year,
+    length: payload.length !== undefined ? Number(payload.length) : datasets.inventory[index].length,
+    weight: payload.weight !== undefined ? Number(payload.weight) : datasets.inventory[index].weight
   };
 
   datasets.inventory[index] = updated;
@@ -113,8 +121,6 @@ function update(id, payload) {
 
 function setFeatured(id, featured, tenantId) {
   const index = datasets.inventory.findIndex(u => u.id === id && matchesTenant(u.tenantId, tenantId));
-function setFeatured(id, featured) {
-  const index = datasets.inventory.findIndex(u => u.id === id);
   if (index === -1) {
     return { notFound: true };
   }
@@ -127,8 +133,6 @@ function setFeatured(id, featured) {
 
 function remove(id, tenantId) {
   const index = datasets.inventory.findIndex(u => u.id === id && matchesTenant(u.tenantId, tenantId));
-function remove(id) {
-  const index = datasets.inventory.findIndex(u => u.id === id);
   if (index === -1) {
     return { notFound: true };
   }
@@ -141,8 +145,6 @@ function stats(tenantId) {
   const tenantInventory = datasets.inventory.filter(unit => matchesTenant(unit.tenantId, tenantId));
 
   const byCondition = tenantInventory.reduce((acc, unit) => {
-function stats() {
-  const byCondition = datasets.inventory.reduce((acc, unit) => {
     acc[unit.condition] = (acc[unit.condition] || 0) + 1;
     return acc;
   }, {});
@@ -154,12 +156,6 @@ function stats() {
 
   return {
     totalUnits: tenantInventory.length,
-    datasets.inventory.length > 0
-      ? datasets.inventory.reduce((sum, unit) => sum + Number(unit.price || 0), 0) / datasets.inventory.length
-      : 0;
-
-  return {
-    totalUnits: datasets.inventory.length,
     byCondition,
     averagePrice
   };

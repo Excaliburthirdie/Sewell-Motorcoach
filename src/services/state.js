@@ -64,32 +64,6 @@ const datasets = {
   financeOffers: normalizeTenantedCollection(loadData('financeOffers.json', [])),
   users: normalizeTenantedCollection(loadData('users.json', [])),
   refreshTokens: normalizeTenantedCollection(loadData('refreshTokens.json', []))
-
-const datasets = {
-  inventory: loadData('inventory.json', []),
-  teams: loadData('teams.json', []),
-  reviews: loadData('reviews.json', []),
-  leads: loadData('leads.json', []),
-  capabilities: loadData('capabilities.json', []),
-  settings: loadData('settings.json', {
-    dealershipName: 'Sewell Motorcoach',
-    address: '2118 Danville Rd',
-    city: 'Harrodsburg',
-    state: 'KY',
-    zip: '40330',
-    country: 'USA',
-    currency: 'USD',
-    phone: '859-734-5566',
-    email: 'sales@sewellmotorcoach.com',
-    hours: {
-      weekday: '9:00 AM - 6:00 PM',
-      saturday: '10:00 AM - 4:00 PM',
-      sunday: 'Closed'
-    }
-  }),
-  customers: loadData('customers.json', []),
-  serviceTickets: loadData('serviceTickets.json', []),
-  financeOffers: loadData('financeOffers.json', [])
 };
 
 const persist = {
@@ -105,7 +79,6 @@ const persist = {
   users: data => saveData('users.json', data),
   refreshTokens: data => saveData('refreshTokens.json', data),
   tenants: data => saveData('tenants.json', data)
-  financeOffers: data => saveData('financeOffers.json', data)
 };
 
 module.exports = {

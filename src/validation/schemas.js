@@ -27,7 +27,7 @@ const inventoryListQuery = paginationSchema.extend({
   industry: z.string().trim().optional(),
   category: z.string().trim().optional(),
   subcategory: z.string().trim().optional(),
-  condition: z.string().trim().optional(),
+  condition: z.enum(['new', 'used', 'demo', 'pending_sale']).optional(),
   location: z.string().trim().optional(),
   featured: z
     .union([z.boolean(), z.string()])
@@ -53,11 +53,53 @@ const inventoryListQuery = paginationSchema.extend({
 
 const inventoryBase = z.object({
   stockNumber: z.string().trim(),
+  vin: z.string().trim().min(6),
   name: z.string().trim(),
-  condition: z.string().trim(),
-  price: z.union([z.number(), z.string()]).transform(val => Number(val)),
-  msrp: z.union([z.number(), z.string()]).optional().transform(val => (val === undefined ? undefined : Number(val))),
-  salePrice: z.union([z.number(), z.string()]).optional().transform(val => (val === undefined ? undefined : Number(val))),
+  condition: z.enum(['new', 'used', 'demo', 'pending_sale']),
+  year: z
+    .union([z.number(), z.string()])
+    .transform(val => Number(val))
+    .refine(val => Number.isInteger(val) && val >= 1980, { message: 'year must be a valid integer year' }),
+  length: z
+    .union([z.number(), z.string()])
+    .optional()
+    .transform(val => (val === undefined ? undefined : Number(val)))
+    .refine(val => val === undefined || val > 0, { message: 'length must be positive' }),
+  weight: z
+    .union([z.number(), z.string()])
+    .optional()
+    .transform(val => (val === undefined ? undefined : Number(val)))
+    .refine(val => val === undefined || val > 0, { message: 'weight must be positive' }),
+  chassis: z.string().trim().optional(),
+  price: z
+    .union([z.number(), z.string()])
+    .transform(val => Number(val))
+    .refine(val => val >= 0, { message: 'price must be non-negative' }),
+  msrp: z
+    .union([z.number(), z.string()])
+    .optional()
+    .transform(val => (val === undefined ? undefined : Number(val)))
+    .refine(val => val === undefined || val >= 0, { message: 'msrp must be non-negative' }),
+  salePrice: z
+    .union([z.number(), z.string()])
+    .optional()
+    .transform(val => (val === undefined ? undefined : Number(val)))
+    .refine(val => val === undefined || val >= 0, { message: 'salePrice must be non-negative' }),
+  rebates: z
+    .union([z.number(), z.string()])
+    .optional()
+    .transform(val => (val === undefined ? undefined : Number(val)))
+    .refine(val => val === undefined || val >= 0, { message: 'rebates must be non-negative' }),
+  taxes: z
+    .union([z.number(), z.string()])
+    .optional()
+    .transform(val => (val === undefined ? undefined : Number(val)))
+    .refine(val => val === undefined || val >= 0, { message: 'taxes must be non-negative' }),
+  fees: z
+    .union([z.number(), z.string()])
+    .optional()
+    .transform(val => (val === undefined ? undefined : Number(val)))
+    .refine(val => val === undefined || val >= 0, { message: 'fees must be non-negative' }),
   industry: z.string().trim().optional(),
   category: z.string().trim().optional(),
   subcategory: z.string().trim().optional(),
@@ -138,7 +180,7 @@ const authLogin = z.object({
 });
 
 const authRefresh = z.object({
-  refreshToken: z.string().trim().min(10)
+  refreshToken: z.string().trim().min(10).optional()
 });
 
 module.exports = {

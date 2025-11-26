@@ -1,71 +1,46 @@
 const { v4: uuidv4 } = require('uuid');
 const { datasets, persist } = require('./state');
-const { validateFields } = require('./shared');
+const { sanitizePayloadStrings, validateFields } = require('./shared');
 const { attachTenant, matchesTenant, normalizeTenantId } = require('./tenantService');
 
-function list(tenantId) {
+function list(query = {}, tenantId) {
+  const { role } = query;
   const tenant = normalizeTenantId(tenantId);
-  return datasets.teams.filter(team => matchesTenant(team.tenantId, tenant));
+  const filtered = datasets.teams
+    .filter(team => matchesTenant(team.tenantId, tenant))
+    .filter(team => (!role ? true : team.role === role));
+  return filtered;
 }
 
 function findById(id, tenantId) {
-  return datasets.teams.find(t => t.id === id && matchesTenant(t.tenantId, tenantId));
+  return datasets.teams.find(team => team.id === id && matchesTenant(team.tenantId, tenantId));
 }
 
 function create(payload, tenantId) {
-
-function list() {
-  return datasets.teams;
-}
-
-function findById(id) {
-  return datasets.teams.find(t => t.id === id);
-}
-
-function create(payload) {
-  const requiredError = validateFields(payload, ['name']);
+  const requiredError = validateFields(payload, ['name', 'role']);
   if (requiredError) {
     return { error: requiredError };
   }
-
-  const members = Array.isArray(payload.members)
-    ? payload.members.map(member => ({
-        ...member,
-        socialLinks: Array.isArray(member.socialLinks) ? member.socialLinks : []
-      }))
-    : [];
-
-  const team = attachTenant({ id: uuidv4(), members, ...payload }, tenantId);
-  const team = { id: uuidv4(), members, ...payload };
+  const body = sanitizePayloadStrings(payload, ['name', 'role', 'bio']);
+  const team = attachTenant({ id: uuidv4(), ...body }, tenantId);
   datasets.teams.push(team);
   persist.teams(datasets.teams);
   return { team };
 }
 
 function update(id, payload, tenantId) {
-  const index = datasets.teams.findIndex(t => t.id === id && matchesTenant(t.tenantId, tenantId));
-function update(id, payload) {
-  const index = datasets.teams.findIndex(t => t.id === id);
+  const index = datasets.teams.findIndex(team => team.id === id && matchesTenant(team.tenantId, tenantId));
   if (index === -1) {
     return { notFound: true };
   }
-
-  const members = Array.isArray(payload.members)
-    ? payload.members.map(member => ({
-        ...member,
-        socialLinks: Array.isArray(member.socialLinks) ? member.socialLinks : []
-      }))
-    : datasets.teams[index].members;
-
-  datasets.teams[index] = { ...datasets.teams[index], ...payload, members };
+  const body = sanitizePayloadStrings(payload, ['name', 'role', 'bio']);
+  datasets.teams[index] = { ...datasets.teams[index], ...body };
   persist.teams(datasets.teams);
   return { team: datasets.teams[index] };
 }
 
 function remove(id, tenantId) {
-  const index = datasets.teams.findIndex(t => t.id === id && matchesTenant(t.tenantId, tenantId));
-function remove(id) {
-  const index = datasets.teams.findIndex(t => t.id === id);
+  const index = datasets.teams.findIndex(team => team.id === id && matchesTenant(team.tenantId, tenantId));
   if (index === -1) {
     return { notFound: true };
   }
@@ -74,31 +49,10 @@ function remove(id) {
   return { team: removed };
 }
 
-function roles(tenantId) {
-  const tenant = normalizeTenantId(tenantId);
-  const roleSet = new Set();
-  datasets.teams
-    .filter(team => matchesTenant(team.tenantId, tenant))
-    .forEach(team => {
-      team.members?.forEach(member => {
-        if (member.jobRole) roleSet.add(member.jobRole);
-      });
-    });
-function roles() {
-  const roleSet = new Set();
-  datasets.teams.forEach(team => {
-    team.members?.forEach(member => {
-      if (member.jobRole) roleSet.add(member.jobRole);
-    });
-  });
-  return Array.from(roleSet);
-}
-
 module.exports = {
   list,
   findById,
   create,
   update,
-  remove,
-  roles
+  remove
 };
