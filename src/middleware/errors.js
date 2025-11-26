@@ -10,6 +10,7 @@ class AppError extends Error {
 function errorHandler(err, req, res, next) { // eslint-disable-line no-unused-vars
   const statusCode = err.statusCode || 500;
   const code = err.code || 'INTERNAL_ERROR';
+  const maskedDetails = err.details ? maskSensitiveFields(err.details) : undefined;
   const response = {
     error: {
       code,
@@ -18,8 +19,8 @@ function errorHandler(err, req, res, next) { // eslint-disable-line no-unused-va
     }
   };
 
-  if (err.details) {
-    response.error.details = err.details;
+  if (maskedDetails) {
+    response.error.details = maskedDetails;
   }
 
   console.error(
@@ -29,6 +30,7 @@ function errorHandler(err, req, res, next) { // eslint-disable-line no-unused-va
       code,
       statusCode,
       message: err.message,
+      details: maskedDetails,
       stack: err.stack
     })
   );
@@ -40,3 +42,4 @@ module.exports = {
   AppError,
   errorHandler
 };
+const { maskSensitiveFields } = require('../services/security');

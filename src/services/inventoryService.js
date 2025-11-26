@@ -1,7 +1,13 @@
 const { v4: uuidv4 } = require('uuid');
 const { datasets, persist } = require('./state');
-const { clampNumber, sanitizeBoolean, validateFields } = require('./shared');
+const { clampNumber, escapeOutputPayload, sanitizeBoolean, validateFields } = require('./shared');
 const { attachTenant, matchesTenant, normalizeTenantId } = require('./tenantService');
+
+const PRICING_FIELDS = ['price', 'msrp', 'salePrice', 'fees', 'taxes'];
+
+function safeUnit(unit) {
+  return escapeOutputPayload(unit);
+}
 
 function list(query = {}, tenantId) {
   const {
@@ -54,12 +60,13 @@ function list(query = {}, tenantId) {
 
   return {
     total: sorted.length,
-    items: sorted.slice(start, end)
+    items: sorted.slice(start, end).map(safeUnit)
   };
 }
 
 function findById(id, tenantId) {
-  return datasets.inventory.find(u => u.id === id && matchesTenant(u.tenantId, tenantId));
+  const unit = datasets.inventory.find(u => u.id === id && matchesTenant(u.tenantId, tenantId));
+  return unit ? safeUnit(unit) : undefined;
 }
 
 function create(payload, tenantId) {
@@ -81,7 +88,7 @@ function create(payload, tenantId) {
 
   datasets.inventory.push(unit);
   persist.inventory(datasets.inventory);
-  return { unit };
+  return { unit: safeUnit(unit) };
 }
 
 function update(id, payload, tenantId) {
@@ -90,15 +97,28 @@ function update(id, payload, tenantId) {
     return { notFound: true };
   }
 
+  const previous = { ...datasets.inventory[index] };
   const updated = {
-    ...datasets.inventory[index],
+    ...previous,
     ...payload,
     featured: sanitizeBoolean(payload.featured, datasets.inventory[index].featured)
   };
 
+  const pricingChanges = PRICING_FIELDS.reduce((changes, field) => {
+    const before = previous[field];
+    const after = updated[field];
+    if (before === undefined && after === undefined) return changes;
+    const beforeNumber = before === undefined ? undefined : Number(before);
+    const afterNumber = after === undefined ? undefined : Number(after);
+    if (Number.isFinite(beforeNumber) && Number.isFinite(afterNumber) && beforeNumber !== afterNumber) {
+      changes.push({ field, previous: beforeNumber, next: afterNumber });
+    }
+    return changes;
+  }, []);
+
   datasets.inventory[index] = updated;
   persist.inventory(datasets.inventory);
-  return { unit: updated };
+  return { unit: safeUnit(updated), previous, pricingChanges };
 }
 
 function setFeatured(id, featured, tenantId) {
@@ -110,7 +130,7 @@ function setFeatured(id, featured, tenantId) {
   const updated = { ...datasets.inventory[index], featured: sanitizeBoolean(featured, true) };
   datasets.inventory[index] = updated;
   persist.inventory(datasets.inventory);
-  return { unit: updated };
+  return { unit: safeUnit(updated) };
 }
 
 function remove(id, tenantId) {
@@ -120,7 +140,7 @@ function remove(id, tenantId) {
   }
   const [removed] = datasets.inventory.splice(index, 1);
   persist.inventory(datasets.inventory);
-  return { unit: removed };
+  return { unit: safeUnit(removed) };
 }
 
 function stats(tenantId) {

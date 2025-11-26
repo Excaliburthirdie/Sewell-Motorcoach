@@ -86,20 +86,20 @@
   {
     "id": 15,
     "text": "Input sanitization and output escaping to mitigate injection risks.",
-    "status": "pending",
-    "note": ""
+    "status": "done",
+    "note": "Deepened input sanitization and output escaping across services."
   },
   {
     "id": 16,
     "text": "CSRF protection for browser-based consumers.",
-    "status": "pending",
-    "note": ""
+    "status": "done",
+    "note": "Added double-submit CSRF tokens with cookie/header validation."
   },
   {
     "id": 17,
     "text": "Secure cookie settings with SameSite and HttpOnly flags where applicable.",
-    "status": "pending",
-    "note": ""
+    "status": "done",
+    "note": "Unified secure cookie defaults for auth/CSRF tokens."
   },
   {
     "id": 18,
@@ -110,8 +110,8 @@
   {
     "id": 19,
     "text": "Audit logging for changes to sensitive data such as pricing and discounts.",
-    "status": "pending",
-    "note": ""
+    "status": "done",
+    "note": "Audit log now captures pricing changes with before/after values."
   },
   {
     "id": 20,
@@ -122,8 +122,8 @@
   {
     "id": 21,
     "text": "Configurable PII masking for logs and exports.",
-    "status": "pending",
-    "note": ""
+    "status": "done",
+    "note": "Implemented configurable PII masking for logs and masked lead exports."
   },
   {
     "id": 22,
@@ -135,43 +135,43 @@
     "id": 23,
     "text": "Inventory schema that tracks VIN, year, length, weight and chassis details.",
     "status": "pending",
-    "note": ""
+    "note": "Epic tracked via subtasks 101-107 for inventory schema expansion and flows."
   },
   {
     "id": 24,
     "text": "Support for multiple condition states (new, used, demo, pending sale).",
     "status": "pending",
-    "note": ""
+    "note": "Epic tracked via subtasks 101-107 for condition handling."
   },
   {
     "id": 25,
     "text": "Pricing fields for MSRP, sale price, rebates, taxes and fees.",
     "status": "pending",
-    "note": ""
+    "note": "Epic tracked via subtasks 101-107 covering detailed pricing fields."
   },
   {
     "id": 26,
     "text": "Location-aware stock with transfer and hold statuses across lots.",
     "status": "pending",
-    "note": ""
+    "note": "Epic tracked via subtasks 101-107 for location-aware stock handling."
   },
   {
     "id": 27,
     "text": "Media management for photos, 360 tours, floorplans and video links.",
     "status": "pending",
-    "note": ""
+    "note": "Epic tracked via subtasks 101-107 for media management."
   },
   {
     "id": 28,
     "text": "Automated image optimization and CDN delivery for media assets.",
     "status": "pending",
-    "note": ""
+    "note": "Epic tracked via subtasks 101-107 for media optimization."
   },
   {
     "id": 29,
     "text": "Bulk import/export of inventory via CSV, Excel and DMS integrations.",
     "status": "pending",
-    "note": ""
+    "note": "Epic tracked via subtasks 101-107 for bulk import/export work."
   },
   {
     "id": 30,
@@ -596,6 +596,48 @@
   {
     "id": 100,
     "text": "Observability-driven postmortem process with action item tracking.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 101,
+    "text": "Expand inventory schema with VIN, year, length, weight and chassis details plus validations.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 102,
+    "text": "Implement inventory condition states (new, used, demo, pending sale) with validation and filters.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 103,
+    "text": "Add pricing model covering MSRP, sale price, rebates, taxes and fees with calculations.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 104,
+    "text": "Build location-aware stock handling including transfers and hold statuses across lots.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 105,
+    "text": "Implement media management for inventory (photos, 360 tours, floorplans, video links).",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 106,
+    "text": "Add automated media optimization and CDN-ready delivery paths.",
+    "status": "pending",
+    "note": ""
+  },
+  {
+    "id": 107,
+    "text": "Support bulk inventory import/export via CSV/Excel with DMS integration hooks.",
     "status": "pending",
     "note": ""
   }
