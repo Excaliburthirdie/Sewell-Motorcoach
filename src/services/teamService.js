@@ -13,6 +13,16 @@ function findById(id, tenantId) {
 }
 
 function create(payload, tenantId) {
+
+function list() {
+  return datasets.teams;
+}
+
+function findById(id) {
+  return datasets.teams.find(t => t.id === id);
+}
+
+function create(payload) {
   const requiredError = validateFields(payload, ['name']);
   if (requiredError) {
     return { error: requiredError };
@@ -26,6 +36,7 @@ function create(payload, tenantId) {
     : [];
 
   const team = attachTenant({ id: uuidv4(), members, ...payload }, tenantId);
+  const team = { id: uuidv4(), members, ...payload };
   datasets.teams.push(team);
   persist.teams(datasets.teams);
   return { team };
@@ -33,6 +44,8 @@ function create(payload, tenantId) {
 
 function update(id, payload, tenantId) {
   const index = datasets.teams.findIndex(t => t.id === id && matchesTenant(t.tenantId, tenantId));
+function update(id, payload) {
+  const index = datasets.teams.findIndex(t => t.id === id);
   if (index === -1) {
     return { notFound: true };
   }
@@ -51,6 +64,8 @@ function update(id, payload, tenantId) {
 
 function remove(id, tenantId) {
   const index = datasets.teams.findIndex(t => t.id === id && matchesTenant(t.tenantId, tenantId));
+function remove(id) {
+  const index = datasets.teams.findIndex(t => t.id === id);
   if (index === -1) {
     return { notFound: true };
   }
@@ -69,6 +84,13 @@ function roles(tenantId) {
         if (member.jobRole) roleSet.add(member.jobRole);
       });
     });
+function roles() {
+  const roleSet = new Set();
+  datasets.teams.forEach(team => {
+    team.members?.forEach(member => {
+      if (member.jobRole) roleSet.add(member.jobRole);
+    });
+  });
   return Array.from(roleSet);
 }
 

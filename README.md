@@ -128,6 +128,9 @@ Unauthorized or insufficient roles return a `403` error with a structured machin
 - **HTTPS enforcement.** When `ENFORCE_HTTPS=true`, the API rejects downgraded
   traffic and sends HSTS headers (`Strict-Transport-Security`) with the
   configured max-age for secure deployments.
+consumption.  Mutating requests (POST/PUT/PATCH/DELETE) can optionally be
+protected with a static bearer token by setting the `API_KEY` environment
+variable before starting the server.
 
 | Method | Endpoint         | Purpose                                     |
 |-------:|------------------|---------------------------------------------|
