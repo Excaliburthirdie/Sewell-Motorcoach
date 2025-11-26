@@ -86,20 +86,20 @@
   {
     "id": 15,
     "text": "Input sanitization and output escaping to mitigate injection risks.",
-    "status": "pending",
-    "note": ""
+    "status": "done",
+    "note": "Input sanitization middleware cleans body/query/params."
   },
   {
     "id": 16,
     "text": "CSRF protection for browser-based consumers.",
-    "status": "pending",
-    "note": ""
+    "status": "done",
+    "note": "Added double-submit CSRF token cookie and header validation for unsafe methods."
   },
   {
     "id": 17,
     "text": "Secure cookie settings with SameSite and HttpOnly flags where applicable.",
-    "status": "pending",
-    "note": ""
+    "status": "done",
+    "note": "Refresh cookies use secure/httpOnly with SameSite based on env."
   },
   {
     "id": 18,
@@ -110,8 +110,8 @@
   {
     "id": 19,
     "text": "Audit logging for changes to sensitive data such as pricing and discounts.",
-    "status": "pending",
-    "note": ""
+    "status": "done",
+    "note": "Audit logging now captures user context for price-affecting inventory changes."
   },
   {
     "id": 20,
@@ -134,20 +134,20 @@
   {
     "id": 23,
     "text": "Inventory schema that tracks VIN, year, length, weight and chassis details.",
-    "status": "pending",
-    "note": ""
+    "status": "done",
+    "note": "Inventory schema now tracks VIN, year, length, weight, chassis fields."
   },
   {
     "id": 24,
     "text": "Support for multiple condition states (new, used, demo, pending sale).",
-    "status": "pending",
-    "note": ""
+    "status": "done",
+    "note": "Condition limited to new/used/demo/pending_sale."
   },
   {
     "id": 25,
     "text": "Pricing fields for MSRP, sale price, rebates, taxes and fees.",
-    "status": "pending",
-    "note": ""
+    "status": "done",
+    "note": "Pricing fields expanded to msrp/salePrice/rebates/taxes/fees with validation."
   },
   {
     "id": 26,

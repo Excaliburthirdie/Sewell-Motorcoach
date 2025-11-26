@@ -84,6 +84,26 @@ app.use((req, res, next) => {
 });
 
 app.use((req, res, next) => {
+  const existingToken = req.cookies?.csrfToken;
+  const csrfToken = existingToken || uuidv4();
+  if (!existingToken) {
+    res.cookie('csrfToken', csrfToken, CSRF_COOKIE_OPTIONS);
+  }
+  res.set('X-CSRF-Token', csrfToken);
+
+  const unsafeMethods = ['POST', 'PUT', 'PATCH', 'DELETE'];
+  if (unsafeMethods.includes(req.method.toUpperCase()) && existingToken) {
+    const providedToken = req.headers['x-csrf-token'] || req.body?.csrfToken || req.query?.csrfToken;
+    if (!providedToken || providedToken !== existingToken) {
+      return next(new AppError('CSRF_TOKEN_INVALID', 'Invalid CSRF token', 403));
+    }
+  }
+
+  req.csrfToken = csrfToken;
+  next();
+});
+
+app.use((req, res, next) => {
   const rawTenantId = req.headers['x-tenant-id'] || req.query.tenantId || (req.body && req.body.tenantId);
   const resolved = tenantService.resolveTenantId(rawTenantId || tenantService.DEFAULT_TENANT_ID);
   if (!resolved) {
@@ -175,6 +195,9 @@ function auditChange(req, action, entity, payload) {
     timestamp: new Date().toISOString(),
     requestId: req.requestId || 'unknown',
     tenantId: req.tenant?.id,
+    userId: req.user?.id,
+    username: req.user?.username,
+    role: req.user?.role,
     action,
     entity,
     payload
@@ -202,6 +225,10 @@ api.post('/auth/login', validateBody(schemas.authLogin), (req, res, next) => {
     tokenType: 'Bearer',
     expiresInSeconds: config.auth.accessTokenTtlSeconds
   });
+});
+
+api.get('/auth/csrf', (req, res) => {
+  res.json({ csrfToken: req.csrfToken });
 });
 
 api.post('/auth/refresh', validateBody(schemas.authRefresh), (req, res, next) => {

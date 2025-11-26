@@ -93,7 +93,16 @@ function update(id, payload, tenantId) {
   const updated = {
     ...datasets.inventory[index],
     ...payload,
-    featured: sanitizeBoolean(payload.featured, datasets.inventory[index].featured)
+    featured: sanitizeBoolean(payload.featured, datasets.inventory[index].featured),
+    price: payload.price !== undefined ? Number(payload.price) : datasets.inventory[index].price,
+    msrp: payload.msrp !== undefined ? Number(payload.msrp) : datasets.inventory[index].msrp,
+    salePrice: payload.salePrice !== undefined ? Number(payload.salePrice) : datasets.inventory[index].salePrice,
+    rebates: payload.rebates !== undefined ? Number(payload.rebates) : datasets.inventory[index].rebates,
+    taxes: payload.taxes !== undefined ? Number(payload.taxes) : datasets.inventory[index].taxes,
+    fees: payload.fees !== undefined ? Number(payload.fees) : datasets.inventory[index].fees,
+    year: payload.year !== undefined ? Number(payload.year) : datasets.inventory[index].year,
+    length: payload.length !== undefined ? Number(payload.length) : datasets.inventory[index].length,
+    weight: payload.weight !== undefined ? Number(payload.weight) : datasets.inventory[index].weight
   };
 
   datasets.inventory[index] = updated;
