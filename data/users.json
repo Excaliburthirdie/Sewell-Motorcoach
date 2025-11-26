@@ -1,0 +1,26 @@
+[
+  {
+    "id": "user-1",
+    "username": "dealer-admin",
+    "role": "admin",
+    "salt": "static-salt",
+    "passwordHash": "dc47c048138746b954eb24c3f6d4a3bd91cf1a0de0725c3a9ac71a960d155524",
+    "tenantId": "main"
+  },
+  {
+    "id": "user-2",
+    "username": "sales-lead",
+    "role": "sales",
+    "salt": "static-salt",
+    "passwordHash": "d7f444d2212dbadc586571b6743ed6758b3633ea18d3c3370c85b912b9aeef03",
+    "tenantId": "main"
+  },
+  {
+    "id": "user-3",
+    "username": "marketing-ops",
+    "role": "marketing",
+    "salt": "static-salt",
+    "passwordHash": "cf6dcf1198c3bee49e486da031d1f6acc0fa29da88382617e6e7cc2df832a4f5",
+    "tenantId": "main"
+  }
+]

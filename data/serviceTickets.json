@@ -1,0 +1,20 @@
+[
+  {
+    "id": "svc-001",
+    "customerId": "cust-001",
+    "unitId": "unit-001",
+    "status": "open",
+    "concern": "Slide-out hydraulics inspection",
+    "scheduledDate": "2024-09-15T10:00:00Z",
+    "technician": "Jordan P.",
+    "warranty": true,
+    "lineItems": [
+      {
+        "description": "Hydraulic fluid top-off",
+        "laborHours": 1.5,
+        "partsCost": 45
+      }
+    ],
+    "tenantId": "main"
+  }
+]
