@@ -20,6 +20,9 @@ function normalizeFees(fees = []) {
 }
 
 function list(query = {}, tenantId) {
+function list(query = {}, tenantId) {
+
+function list(query = {}) {
   const {
     industry,
     category,
@@ -42,6 +45,7 @@ function list(query = {}, tenantId) {
 
   const filtered = datasets.inventory
     .filter(unit => matchesTenant(unit.tenantId, tenant))
+  const filtered = datasets.inventory
     .filter(unit => !industry || unit.industry === industry)
     .filter(unit => !category || unit.category === category)
     .filter(unit => !subcategory || unit.subcategory === subcategory)
@@ -86,11 +90,18 @@ function findById(id, tenantId) {
 
 function create(payload, tenantId) {
   const requiredError = validateFields(payload, ['stockNumber', 'name', 'vin', 'year', 'condition', 'price']);
+function findById(id) {
+  return datasets.inventory.find(u => u.id === id);
+}
+
+function create(payload) {
+  const requiredError = validateFields(payload, ['stockNumber', 'name', 'condition', 'price']);
   if (requiredError) {
     return { error: requiredError };
   }
 
   const unit = attachTenant({
+  const unit = {
     id: uuidv4(),
     featured: sanitizeBoolean(payload.featured, false),
     createdAt: new Date().toISOString(),
@@ -111,6 +122,9 @@ function create(payload, tenantId) {
   if (!VALID_CONDITION_STATES.includes(unit.condition)) {
     unit.condition = 'New';
   }
+    ...payload
+  }, tenantId);
+  };
 
   datasets.inventory.push(unit);
   persist.inventory(datasets.inventory);
@@ -119,6 +133,8 @@ function create(payload, tenantId) {
 
 function update(id, payload, tenantId) {
   const index = datasets.inventory.findIndex(u => u.id === id && matchesTenant(u.tenantId, tenantId));
+function update(id, payload) {
+  const index = datasets.inventory.findIndex(u => u.id === id);
   if (index === -1) {
     return { notFound: true };
   }
@@ -197,6 +213,10 @@ function setHold(id, payload, tenantId) {
         }
       : null,
     locationStatus: payload.hold ? 'On Hold' : 'On Lot'
+  const updated = {
+    ...datasets.inventory[index],
+    ...payload,
+    featured: sanitizeBoolean(payload.featured, datasets.inventory[index].featured)
   };
 
   datasets.inventory[index] = updated;
@@ -236,10 +256,13 @@ function updateTransfer(id, payload, tenantId) {
   datasets.inventory[index] = updated;
   persist.inventory(datasets.inventory);
   return { unit: updated, previous };
+  return { unit: updated };
 }
 
 function setFeatured(id, featured, tenantId) {
   const index = datasets.inventory.findIndex(u => u.id === id && matchesTenant(u.tenantId, tenantId));
+function setFeatured(id, featured) {
+  const index = datasets.inventory.findIndex(u => u.id === id);
   if (index === -1) {
     return { notFound: true };
   }
@@ -252,6 +275,8 @@ function setFeatured(id, featured, tenantId) {
 
 function remove(id, tenantId) {
   const index = datasets.inventory.findIndex(u => u.id === id && matchesTenant(u.tenantId, tenantId));
+function remove(id) {
+  const index = datasets.inventory.findIndex(u => u.id === id);
   if (index === -1) {
     return { notFound: true };
   }
@@ -264,6 +289,8 @@ function stats(tenantId) {
   const tenantInventory = datasets.inventory.filter(unit => matchesTenant(unit.tenantId, tenantId));
 
   const byCondition = tenantInventory.reduce((acc, unit) => {
+function stats() {
+  const byCondition = datasets.inventory.reduce((acc, unit) => {
     acc[unit.condition] = (acc[unit.condition] || 0) + 1;
     return acc;
   }, {});
@@ -275,6 +302,12 @@ function stats(tenantId) {
 
   return {
     totalUnits: tenantInventory.length,
+    datasets.inventory.length > 0
+      ? datasets.inventory.reduce((sum, unit) => sum + Number(unit.price || 0), 0) / datasets.inventory.length
+      : 0;
+
+  return {
+    totalUnits: datasets.inventory.length,
     byCondition,
     averagePrice
   };

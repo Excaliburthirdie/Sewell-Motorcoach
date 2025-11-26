@@ -33,6 +33,7 @@ const inventoryListQuery = paginationSchema.extend({
   condition: z.enum(VALID_INVENTORY_CONDITIONS).optional(),
   lotId: z.string().trim().optional(),
   locationStatus: z.enum(VALID_LOCATION_STATUSES).optional(),
+  condition: z.string().trim().optional(),
   location: z.string().trim().optional(),
   featured: z
     .union([z.boolean(), z.string()])
@@ -52,6 +53,7 @@ const inventoryListQuery = paginationSchema.extend({
     .transform(val => (val === undefined ? undefined : Number(val))),
   search: z.string().trim().min(1).optional(),
   sortBy: z.enum(['createdAt', 'price', 'msrp', 'daysOnLot', 'year']).optional(),
+  sortBy: z.enum(['createdAt', 'price', 'msrp', 'daysOnLot']).optional(),
   sortDir: z.enum(['asc', 'desc']).optional(),
   tenantId: z.string().trim().min(1).optional()
 });
@@ -88,6 +90,16 @@ const inventoryBase = z.object({
   subcategory: z.string().trim().optional(),
   lotId: z.string().trim().optional(),
   locationStatus: z.enum(VALID_LOCATION_STATUSES).optional(),
+const inventoryBase = z.object({
+  stockNumber: z.string().trim(),
+  name: z.string().trim(),
+  condition: z.string().trim(),
+  price: z.union([z.number(), z.string()]).transform(val => Number(val)),
+  msrp: z.union([z.number(), z.string()]).optional().transform(val => (val === undefined ? undefined : Number(val))),
+  salePrice: z.union([z.number(), z.string()]).optional().transform(val => (val === undefined ? undefined : Number(val))),
+  industry: z.string().trim().optional(),
+  category: z.string().trim().optional(),
+  subcategory: z.string().trim().optional(),
   location: z.string().trim().optional(),
   daysOnLot: z.union([z.number(), z.string()]).optional().transform(val => (val === undefined ? undefined : Number(val))),
   images: z.array(z.string().url()).optional(),
@@ -158,6 +170,7 @@ const leadCreate = z.object({
   status: z.enum(VALID_LEAD_STATUSES).optional(),
   interestedStockNumber: z.string().trim().optional(),
   consent: consentDetails.optional()
+  interestedStockNumber: z.string().trim().optional()
 });
 const leadUpdate = leadCreate.partial();
 const leadStatusUpdate = z.object({ status: z.enum(VALID_LEAD_STATUSES) });
@@ -167,6 +180,7 @@ const leadListQuery = z.object({
   sortDir: z.enum(['asc', 'desc']).optional(),
   tenantId: z.string().trim().min(1).optional(),
   maskPII: z.boolean().optional()
+  tenantId: z.string().trim().min(1).optional()
 });
 
 const settingsUpdate = z.object({

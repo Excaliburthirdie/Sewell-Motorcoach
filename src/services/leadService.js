@@ -39,6 +39,19 @@ function findById(id, tenantId) {
 }
 
 function create(payload, tenantId) {
+function findById(id, tenantId) {
+  return datasets.leads.find(l => l.id === id && matchesTenant(l.tenantId, tenantId));
+}
+
+function create(payload, tenantId) {
+
+const VALID_LEAD_STATUSES = ['new', 'contacted', 'qualified', 'won', 'lost'];
+
+function findById(id) {
+  return datasets.leads.find(l => l.id === id);
+}
+
+function create(payload) {
   const requiredError = validateFields(payload, ['name', 'email', 'message']);
   if (requiredError) {
     return { error: requiredError };
@@ -49,6 +62,8 @@ function create(payload, tenantId) {
   const consent = normalizedConsent(body.consent);
 
   const lead = attachTenant({
+  const lead = attachTenant({
+  const lead = {
     id: uuidv4(),
     createdAt: new Date().toISOString(),
     status: VALID_LEAD_STATUSES.includes(body.status) ? body.status : 'new',
@@ -56,6 +71,9 @@ function create(payload, tenantId) {
     ...body,
     consent
   }, tenantId);
+    ...body
+  }, tenantId);
+  };
   datasets.leads.push(lead);
   persist.leads(datasets.leads);
   return { lead };
@@ -63,6 +81,8 @@ function create(payload, tenantId) {
 
 function update(id, payload, tenantId) {
   const index = datasets.leads.findIndex(l => l.id === id && matchesTenant(l.tenantId, tenantId));
+function update(id, payload) {
+  const index = datasets.leads.findIndex(l => l.id === id);
   if (index === -1) {
     return { notFound: true };
   }
@@ -76,12 +96,15 @@ function update(id, payload, tenantId) {
   const consent = updates.consent ? normalizedConsent(updates.consent) : ensureConsent(datasets.leads[index]).consent;
 
   datasets.leads[index] = { ...datasets.leads[index], ...updates, status, consent };
+  datasets.leads[index] = { ...datasets.leads[index], ...updates, status };
   persist.leads(datasets.leads);
   return { lead: datasets.leads[index] };
 }
 
 function setStatus(id, status, tenantId) {
   const index = datasets.leads.findIndex(l => l.id === id && matchesTenant(l.tenantId, tenantId));
+function setStatus(id, status) {
+  const index = datasets.leads.findIndex(l => l.id === id);
   if (index === -1) {
     return { notFound: true };
   }
@@ -91,18 +114,22 @@ function setStatus(id, status, tenantId) {
   }
 
   datasets.leads[index] = ensureConsent({ ...datasets.leads[index], status });
+  datasets.leads[index] = { ...datasets.leads[index], status };
   persist.leads(datasets.leads);
   return { lead: datasets.leads[index] };
 }
 
 function remove(id, tenantId) {
   const index = datasets.leads.findIndex(l => l.id === id && matchesTenant(l.tenantId, tenantId));
+function remove(id) {
+  const index = datasets.leads.findIndex(l => l.id === id);
   if (index === -1) {
     return { notFound: true };
   }
   const [removed] = datasets.leads.splice(index, 1);
   persist.leads(datasets.leads);
   return { lead: ensureConsent(removed) };
+  return { lead: removed };
 }
 
 function list(query = {}, tenantId) {
@@ -110,6 +137,11 @@ function list(query = {}, tenantId) {
   const tenant = normalizeTenantId(tenantId);
   const scoped = datasets.leads.filter(lead => matchesTenant(lead.tenantId, tenant)).map(ensureConsent);
   const filtered = status ? scoped.filter(lead => lead.status === status) : scoped;
+  const scoped = datasets.leads.filter(lead => matchesTenant(lead.tenantId, tenant));
+  const filtered = status ? scoped.filter(lead => lead.status === status) : scoped;
+function list(query = {}) {
+  const { status, sortBy = 'createdAt', sortDir = 'desc' } = query;
+  const filtered = status ? datasets.leads.filter(lead => lead.status === status) : datasets.leads;
 
   const sorted = [...filtered].sort((a, b) => {
     const direction = sortDir === 'asc' ? 1 : -1;

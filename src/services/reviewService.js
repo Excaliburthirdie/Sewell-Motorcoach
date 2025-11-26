@@ -13,6 +13,16 @@ function findById(id, tenantId) {
 }
 
 function create(payload, tenantId) {
+
+function list() {
+  return datasets.reviews;
+}
+
+function findById(id) {
+  return datasets.reviews.find(r => r.id === id);
+}
+
+function create(payload) {
   const requiredError = validateFields(payload, ['name', 'rating', 'content']);
   if (requiredError) {
     return { error: requiredError };
@@ -33,6 +43,13 @@ function create(payload, tenantId) {
     },
     tenantId
   );
+  const review = {
+    id: uuidv4(),
+    visible: sanitizeBoolean(payload.visible, true),
+    createdAt: new Date().toISOString(),
+    rating,
+    ...payload
+  };
 
   datasets.reviews.push(review);
   persist.reviews(datasets.reviews);
@@ -41,6 +58,8 @@ function create(payload, tenantId) {
 
 function update(id, payload, tenantId) {
   const index = datasets.reviews.findIndex(r => r.id === id && matchesTenant(r.tenantId, tenantId));
+function update(id, payload) {
+  const index = datasets.reviews.findIndex(r => r.id === id);
   if (index === -1) {
     return { notFound: true };
   }
@@ -62,6 +81,8 @@ function update(id, payload, tenantId) {
 
 function toggleVisibility(id, visible, tenantId) {
   const index = datasets.reviews.findIndex(r => r.id === id && matchesTenant(r.tenantId, tenantId));
+function toggleVisibility(id, visible) {
+  const index = datasets.reviews.findIndex(r => r.id === id);
   if (index === -1) {
     return { notFound: true };
   }
@@ -76,6 +97,8 @@ function toggleVisibility(id, visible, tenantId) {
 
 function remove(id, tenantId) {
   const index = datasets.reviews.findIndex(r => r.id === id && matchesTenant(r.tenantId, tenantId));
+function remove(id) {
+  const index = datasets.reviews.findIndex(r => r.id === id);
   if (index === -1) {
     return { notFound: true };
   }
@@ -87,6 +110,8 @@ function remove(id, tenantId) {
 function summary(tenantId) {
   const scoped = datasets.reviews.filter(r => matchesTenant(r.tenantId, tenantId));
   const visibleReviews = scoped.filter(r => r.visible !== false);
+function summary() {
+  const visibleReviews = datasets.reviews.filter(r => r.visible !== false);
   const averageRating =
     visibleReviews.length > 0
       ? visibleReviews.reduce((sum, review) => sum + Number(review.rating || 0), 0) / visibleReviews.length
@@ -94,6 +119,7 @@ function summary(tenantId) {
 
   return {
     total: scoped.length,
+    total: datasets.reviews.length,
     visible: visibleReviews.length,
     averageRating
   };

@@ -11,6 +11,12 @@ function get(tenantId) {
 }
 
 function update(payload, tenantId) {
+
+function get() {
+  return datasets.settings;
+}
+
+function update(payload) {
   const requiredError = validateFields(payload, ['dealershipName', 'phone']);
   if (requiredError) {
     return { error: requiredError };
@@ -38,6 +44,17 @@ function update(payload, tenantId) {
 
   persist.settings(datasets.settings);
   return { settings: merged };
+  const hours = payload.hours || datasets.settings.hours;
+  datasets.settings = {
+    ...datasets.settings,
+    ...payload,
+    hours: {
+      ...datasets.settings.hours,
+      ...hours
+    }
+  };
+  persist.settings(datasets.settings);
+  return { settings: datasets.settings };
 }
 
 module.exports = {

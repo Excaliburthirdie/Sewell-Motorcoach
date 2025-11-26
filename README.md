@@ -146,6 +146,9 @@ Unauthorized or insufficient roles return a `403` error with a structured machin
   `lax`), `HttpOnly`, and `Secure` when HTTPS is enforced. Override via
   `COOKIE_SAMESITE`, `COOKIE_SECURE`, `COOKIE_DOMAIN`, and `COOKIE_PATH` to
   match your deployment.
+consumption.  Mutating requests (POST/PUT/PATCH/DELETE) can optionally be
+protected with a static bearer token by setting the `API_KEY` environment
+variable before starting the server.
 
 | Method | Endpoint         | Purpose                                     |
 |-------:|------------------|---------------------------------------------|
@@ -154,6 +157,7 @@ Unauthorized or insufficient roles return a `403` error with a structured machin
 |  POST  | `/auth/logout`   | Revoke a refresh token                      |
 |  GET   | `/auth/me`       | Return the authenticated principal          |
 |  GET   | `/inventory`     | List all inventory units (filter by condition, lot, status) |
+|  GET   | `/inventory`     | List all inventory units                     |
 |  GET   | `/inventory/:id` | Retrieve a single unit by ID                |
 |  POST  | `/inventory`     | Create a new unit                           |
 |  PUT   | `/inventory/:id` | Update an existing unit                     |
@@ -216,6 +220,8 @@ layer.
 - **Data retention** automatically archives leads older than the configured
   retention period and prunes audit logs on a scheduled interval; adjust via
   `RETENTION_LEADS_DAYS`, `RETENTION_AUDIT_DAYS`, and `RETENTION_INTERVAL_HOURS`.
+- **Audit logging** writes all create/update/delete operations to
+  `data/audit.log` alongside the request identifier and payload.
 - **Health** and **metrics** endpoints provide lightweight readiness
   signals for orchestration and dashboards.
 
