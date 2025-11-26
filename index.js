@@ -269,16 +269,6 @@ api.get('/inventory/slug/:slug', (req, res, next) => {
   res.json(unit);
 });
 
-api.get('/inventory', validateQuery(schemas.inventoryListQuery), (req, res) => {
-  res.json(inventoryService.list(req.validated.query, req.tenant.id));
-});
-
-api.get('/inventory/slug/:slug', (req, res, next) => {
-  const unit = inventoryService.findBySlug(req.params.slug, req.tenant.id);
-  if (!unit) return next(new AppError('NOT_FOUND', 'Inventory not found', 404));
-  res.json(unit);
-});
-
 api.get('/inventory/:id', validateParams(schemas.idParam), (req, res, next) => {
   const unit = inventoryService.findById(req.validated.params.id, req.tenant.id);
   if (!unit) return next(new AppError('NOT_FOUND', 'Inventory not found', 404));

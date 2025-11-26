@@ -2,9 +2,29 @@ const { v4: uuidv4 } = require('uuid');
 const { datasets, persist } = require('./state');
 const { clampNumber, escapeOutputPayload, sanitizeBoolean, sanitizeString, validateFields } = require('./shared');
 const { attachTenant, matchesTenant, normalizeTenantId } = require('./tenantService');
-const { INVENTORY_CONDITIONS, TRANSFER_STATUSES } = require('../validation/schemas');
+const {
+  constants: { INVENTORY_CONDITIONS, TRANSFER_STATUSES }
+} = require('../validation/schemas');
 
 const PRICING_FIELDS = ['price', 'msrp', 'salePrice', 'fees', 'taxes', 'rebates'];
+
+function sanitizeCondition(value, fallback) {
+  if (!value) return fallback;
+  const normalized = sanitizeString(value).toLowerCase();
+  return INVENTORY_CONDITIONS.includes(normalized) ? normalized : fallback;
+}
+
+function sanitizeTransferStatus(value, fallback = 'none') {
+  if (!value) return fallback;
+  const normalized = sanitizeString(value).toLowerCase();
+  return TRANSFER_STATUSES.includes(normalized) ? normalized : fallback;
+}
+
+function sanitizeHoldUntil(value) {
+  if (!value) return undefined;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? undefined : parsed.toISOString();
+}
 
 function calculateTotalPrice(unit) {
   const price = Number(unit.salePrice ?? unit.price ?? 0);
@@ -87,7 +107,8 @@ function findById(id, tenantId) {
 }
 
 function findBySlug(slug, tenantId) {
-  const unit = datasets.inventory.find(u => u.slug === slug && matchesTenant(u.tenantId, tenantId));
+  const tenant = normalizeTenantId(tenantId);
+  const unit = datasets.inventory.find(item => matchesTenant(item.tenantId, tenant) && item.slug === slug);
   return unit ? safeUnit(unit) : undefined;
 }
 
@@ -120,6 +141,11 @@ function create(payload, tenantId) {
     return { error: requiredError };
   }
 
+  const normalizedCondition = sanitizeCondition(payload.condition, 'new');
+  const normalizedTransfer = sanitizeTransferStatus(payload.transferStatus, 'none');
+  const holdUntil = sanitizeHoldUntil(payload.holdUntil);
+  const slug = payload.slug ? slugify(payload.slug) : slugify(payload.name || payload.stockNumber);
+
   const normalizedTenant = normalizeTenantId(tenantId);
   const vinExists = datasets.inventory.some(
     unit => matchesTenant(unit.tenantId, normalizedTenant) && unit.vin === payload.vin
@@ -127,9 +153,9 @@ function create(payload, tenantId) {
   if (vinExists) {
     return { error: 'VIN must be unique per tenant' };
   }
-  if (payload.slug) {
+  if (slug) {
     const slugExists = datasets.inventory.some(
-      unit => matchesTenant(unit.tenantId, normalizedTenant) && unit.slug === payload.slug
+      unit => matchesTenant(unit.tenantId, normalizedTenant) && unit.slug === slug
     );
     if (slugExists) {
       return { error: 'Slug must be unique per tenant' };
@@ -145,6 +171,10 @@ function create(payload, tenantId) {
       floorplans: Array.isArray(payload.floorplans) ? payload.floorplans : [],
       virtualTours: Array.isArray(payload.virtualTours) ? payload.virtualTours : [],
       videoLinks: Array.isArray(payload.videoLinks) ? payload.videoLinks : [],
+      condition: normalizedCondition,
+      transferStatus: normalizedTransfer,
+      holdUntil,
+      slug,
       ...payload
     },
     tenantId
@@ -167,7 +197,8 @@ function update(id, payload, tenantId) {
     return { conflict: 'VIN already exists for this tenant' };
   }
 
-  const proposedSlug = payload.slug || datasets.inventory[index].slug || slugify(payload.name || datasets.inventory[index].name);
+  const proposedSlug =
+    slugify(payload.slug || payload.name) || datasets.inventory[index].slug || slugify(datasets.inventory[index].name);
   if (hasSlugConflict(proposedSlug, tenantId, id)) {
     return { conflict: 'Slug already exists for this tenant' };
   }
@@ -177,13 +208,14 @@ function update(id, payload, tenantId) {
     ...previous,
     ...payload,
     featured: sanitizeBoolean(payload.featured, datasets.inventory[index].featured),
-    condition: sanitizeCondition(payload.condition) || previous.condition,
-    transferStatus: sanitizeTransferStatus(payload.transferStatus) || previous.transferStatus,
+    condition: sanitizeCondition(payload.condition, previous.condition),
+    transferStatus: sanitizeTransferStatus(payload.transferStatus, previous.transferStatus),
     rebates: payload.rebates !== undefined ? Number(payload.rebates) : previous.rebates || 0,
     fees: payload.fees !== undefined ? Number(payload.fees) : previous.fees || 0,
     taxes: payload.taxes !== undefined ? Number(payload.taxes) : previous.taxes || 0,
     vin: payload.vin ? sanitizeString(payload.vin) : previous.vin,
-    slug: proposedSlug
+    slug: proposedSlug,
+    holdUntil: sanitizeHoldUntil(payload.holdUntil) || previous.holdUntil
   };
 
   const normalizedTenant = normalizeTenantId(tenantId);
@@ -263,10 +295,63 @@ function stats(tenantId) {
   };
 }
 
-function findBySlug(slug, tenantId) {
-  const tenant = normalizeTenantId(tenantId);
-  const unit = datasets.inventory.find(item => matchesTenant(item.tenantId, tenant) && item.slug === slug);
-  return unit ? safeUnit(unit) : undefined;
+function importCsv(csv, tenantId) {
+  const lines = csv
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean);
+  if (lines.length === 0) {
+    return { created: [], errors: ['CSV payload is empty'] };
+  }
+
+  const headers = lines[0].split(',').map(h => h.trim());
+  const created = [];
+  const errors = [];
+
+  for (let i = 1; i < lines.length; i += 1) {
+    const rawRow = lines[i];
+    const columns = rawRow.split(',');
+    if (columns.length !== headers.length) {
+      errors.push(`Row ${i} has ${columns.length} columns, expected ${headers.length}`);
+      continue;
+    }
+
+    const row = headers.reduce((acc, header, index) => {
+      acc[header] = columns[index]?.trim();
+      return acc;
+    }, {});
+
+    const payload = {
+      stockNumber: row.stockNumber || row.stock_number,
+      vin: row.vin,
+      name: row.name,
+      condition: row.condition,
+      price: row.price,
+      msrp: row.msrp,
+      salePrice: row.salePrice || row.sale_price,
+      rebates: row.rebates,
+      fees: row.fees,
+      taxes: row.taxes,
+      industry: row.industry,
+      category: row.category,
+      subcategory: row.subcategory,
+      location: row.location,
+      lotCode: row.lotCode || row.lot_code,
+      transferStatus: row.transferStatus || row.transfer_status,
+      holdUntil: row.holdUntil || row.hold_until,
+      featured: row.featured === 'true',
+      slug: row.slug
+    };
+
+    const result = create(payload, tenantId);
+    if (result.error || result.conflict) {
+      errors.push(`Row ${i}: ${result.error || result.conflict}`);
+    } else {
+      created.push(result.unit);
+    }
+  }
+
+  return { created, errors };
 }
 
 module.exports = {
