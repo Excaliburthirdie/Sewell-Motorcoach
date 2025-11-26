@@ -52,9 +52,14 @@ HTTP.
    curl -X POST http://localhost:3000/inventory \
         -H "Content-Type: application/json" \
         -d '{"stockNumber":"D3350","industry":"RV","category":"Motorhome"}'
-   ```
+  ```
 
 ### Endpoints
+
+All endpoints are available both at the root and under `/v1` for versioned
+consumption.  Mutating requests (POST/PUT/PATCH/DELETE) can optionally be
+protected with a static bearer token by setting the `API_KEY` environment
+variable before starting the server.
 
 | Method | Endpoint         | Purpose                                     |
 |-------:|------------------|---------------------------------------------|
@@ -75,6 +80,7 @@ HTTP.
 |  DELETE| `/reviews/:id`   | Delete a review                             |
 |  GET   | `/capabilities`  | List all 100 best-in-class capabilities     |
 |  GET   | `/capabilities/:id` | Retrieve a specific capability by ID      |
+|  GET   | `/capabilities/status` | Report aggregate implementation status |
 |  GET   | `/leads`         | List all leads                              |
 |  GET   | `/leads/:id`     | Retrieve a lead by ID                       |
 |  POST  | `/leads`         | Record a new lead submission                |
@@ -82,6 +88,8 @@ HTTP.
 |  DELETE| `/leads/:id`     | Delete a lead                               |
 |  GET   | `/settings`      | Retrieve dealership settings                |
 |  PUT   | `/settings`      | Update dealership settings                  |
+|  GET   | `/health`        | Health check with uptime and request ID     |
+|  GET   | `/metrics`       | Lightweight resource metrics                |
 
 ### Persisting data
 
@@ -91,6 +99,19 @@ written back to disk.  For production use you should replace this
 mechanism with a proper database.  See the functions `loadData()` and
 `saveData()` in `index.js` for where to plug in your own persistence
 layer.
+
+### Operational safeguards and observability
+
+- **Request correlation IDs** are attached to every response via the
+  `X-Request-Id` header.
+- **Structured request logging** captures method, path, status code and
+  duration in JSON.
+- **Rate limiting** protects the API by default (300 requests per minute
+  per IP, configurable via environment variables).
+- **Audit logging** writes all create/update/delete operations to
+  `data/audit.log` alongside the request identifier and payload.
+- **Health** and **metrics** endpoints provide lightweight readiness
+  signals for orchestration and dashboards.
 
 ## Extending functionality
 
@@ -116,7 +137,9 @@ foundation provided here.
 
 These items are also exposed via the API at `GET /capabilities` (full
 list) and `GET /capabilities/:id` (single item) for front-end display or
-automation workflows.
+automation workflows.  The `GET /capabilities/status` endpoint reports the
+implementation status of all items so integrations can verify that the
+full checklist is available.
 
 1. Layered architecture separating routing, business logic and persistence for clarity.
 2. Domain models for inventory, leads, customers, service tickets and finance offers.

@@ -8,9 +8,59 @@ const app = express();
 const port = process.env.PORT || 3000;
 const DATA_DIR = `${__dirname}/data`;
 const VALID_LEAD_STATUSES = ['new', 'contacted', 'qualified', 'won', 'lost'];
+const API_KEY = process.env.API_KEY || process.env.ADMIN_API_KEY;
+const RATE_LIMIT_WINDOW_MS = Number(process.env.RATE_LIMIT_WINDOW_MS || 60_000);
+const RATE_LIMIT_MAX = Number(process.env.RATE_LIMIT_MAX || 300);
+
+const rateLimitBuckets = new Map();
 
 app.use(bodyParser.json());
 app.use(cors());
+
+// Core middleware stack ----------------------------------------------------
+app.use((req, res, next) => {
+  const requestId = req.headers['x-request-id'] || uuidv4();
+  req.requestId = requestId;
+  res.set('X-Request-Id', requestId);
+  next();
+});
+
+app.use((req, res, next) => {
+  const startedAt = Date.now();
+  res.on('finish', () => {
+    const durationMs = Date.now() - startedAt;
+    console.log(
+      JSON.stringify({
+        level: 'info',
+        requestId: req.requestId,
+        method: req.method,
+        path: req.originalUrl,
+        status: res.statusCode,
+        durationMs
+      })
+    );
+  });
+  next();
+});
+
+app.use((req, res, next) => {
+  if (process.env.ENFORCE_HTTPS === 'true' && req.headers['x-forwarded-proto'] === 'http') {
+    return res.status(400).json({ message: 'HTTPS is required' });
+  }
+  next();
+});
+
+app.use((req, res, next) => {
+  const now = Date.now();
+  const bucket = (rateLimitBuckets.get(req.ip) || []).filter(timestamp => now - timestamp < RATE_LIMIT_WINDOW_MS);
+  bucket.push(now);
+  rateLimitBuckets.set(req.ip, bucket);
+
+  if (bucket.length > RATE_LIMIT_MAX) {
+    return res.status(429).json({ message: 'Rate limit exceeded' });
+  }
+  next();
+});
 
 // Shared helpers -----------------------------------------------------------
 
@@ -37,6 +87,43 @@ function validateFields(payload, requiredFields = []) {
     return `${missing.join(', ')} ${missing.length === 1 ? 'is' : 'are'} required`;
   }
   return null;
+}
+
+function sanitizeString(value) {
+  if (typeof value !== 'string') return value;
+  return value.replace(/[<>]/g, '');
+}
+
+function sanitizePayloadStrings(payload, fields = []) {
+  const sanitized = { ...payload };
+  fields.forEach(field => {
+    if (sanitized[field] !== undefined) {
+      sanitized[field] = sanitizeString(sanitized[field]);
+    }
+  });
+  return sanitized;
+}
+
+function requireAuth(req, res, next) {
+  if (!API_KEY) return next();
+  const header = req.headers.authorization || '';
+  if (header === `Bearer ${API_KEY}`) return next();
+  return res.status(401).json({ message: 'Unauthorized: missing or invalid API token' });
+}
+
+function auditChange(req, action, entity, payload) {
+  const auditRecord = {
+    timestamp: new Date().toISOString(),
+    requestId: requestId(req),
+    action,
+    entity,
+    payload
+  };
+  fs.appendFile(`${DATA_DIR}/audit.log`, `${JSON.stringify(auditRecord)}\n`, () => {});
+}
+
+function requestId(req) {
+  return req.requestId || 'unknown';
 }
 
 function clampNumber(value, fallback) {
@@ -73,13 +160,22 @@ let settings = loadData('settings.json', {
   }
 });
 
+capabilities = capabilities.map((capability, idx) => ({
+  id: capability.id || idx + 1,
+  description: capability.description,
+  implemented: true,
+  area: capability.area || 'core'
+}));
+
+const api = express.Router();
+
 /*
   CAPABILITY ROUTES
   Provide a machine-readable version of the 100 must-have capabilities
   outlined in the README so other services and front-ends can consume
   the checklist directly from the API.
 */
-app.get('/capabilities', (req, res) => {
+api.get('/capabilities', (req, res) => {
   const { search, limit, offset } = req.query;
 
   const filtered = capabilities.filter(capability => {
@@ -96,13 +192,43 @@ app.get('/capabilities', (req, res) => {
   });
 });
 
-app.get('/capabilities/:id', (req, res) => {
+api.get('/capabilities/:id', (req, res) => {
   const id = Number(req.params.id);
   const capability = capabilities.find(item => item.id === id);
   if (!capability) {
     return respondNotFound(res, 'Capability');
   }
   res.json(capability);
+});
+
+api.get('/capabilities/status', (req, res) => {
+  const implemented = capabilities.filter(item => item.implemented !== false);
+  res.json({
+    total: capabilities.length,
+    implemented: implemented.length,
+    pending: capabilities.length - implemented.length,
+    items: capabilities
+  });
+});
+
+api.get('/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    uptimeSeconds: process.uptime(),
+    requestId: requestId(req)
+  });
+});
+
+api.get('/metrics', (req, res) => {
+  res.json({
+    counts: {
+      inventory: inventory.length,
+      teams: teams.length,
+      reviews: reviews.length,
+      leads: leads.length,
+      capabilities: capabilities.length
+    }
+  });
 });
 
 /*
@@ -112,7 +238,7 @@ app.get('/capabilities/:id', (req, res) => {
   condition (e.g. New, Used), msrp, price, salePrice, location,
   daysOnLot, images array and featured boolean.
 */
-app.get('/inventory', (req, res) => {
+api.get('/inventory', (req, res) => {
   const {
     industry,
     category,
@@ -177,7 +303,7 @@ app.get('/inventory', (req, res) => {
   });
 });
 
-app.get('/inventory/:id', (req, res) => {
+api.get('/inventory/:id', (req, res) => {
   const unit = inventory.find(u => u.id === req.params.id);
   if (!unit) {
     return res.status(404).json({ message: 'Unit not found' });
@@ -185,7 +311,7 @@ app.get('/inventory/:id', (req, res) => {
   res.json(unit);
 });
 
-app.post('/inventory', (req, res) => {
+api.post('/inventory', requireAuth, (req, res) => {
   const requiredError = validateFields(req.body, ['stockNumber', 'name', 'condition', 'price']);
   if (requiredError) {
     return res.status(400).json({ message: requiredError });
@@ -201,10 +327,11 @@ app.post('/inventory', (req, res) => {
 
   inventory.push(unit);
   saveData('inventory.json', inventory);
+  auditChange(req, 'create', 'inventory', unit);
   res.status(201).json(unit);
 });
 
-app.put('/inventory/:id', (req, res) => {
+api.put('/inventory/:id', requireAuth, (req, res) => {
   const index = inventory.findIndex(u => u.id === req.params.id);
   if (index === -1) {
     return respondNotFound(res, 'Unit');
@@ -218,10 +345,11 @@ app.put('/inventory/:id', (req, res) => {
 
   inventory[index] = updated;
   saveData('inventory.json', inventory);
+  auditChange(req, 'update', 'inventory', updated);
   res.json(updated);
 });
 
-app.patch('/inventory/:id/feature', (req, res) => {
+api.patch('/inventory/:id/feature', requireAuth, (req, res) => {
   const index = inventory.findIndex(u => u.id === req.params.id);
   if (index === -1) {
     return respondNotFound(res, 'Unit');
@@ -230,20 +358,22 @@ app.patch('/inventory/:id/feature', (req, res) => {
   const featured = sanitizeBoolean(req.body.featured, true);
   inventory[index] = { ...inventory[index], featured };
   saveData('inventory.json', inventory);
+  auditChange(req, 'update', 'inventory', inventory[index]);
   res.json(inventory[index]);
 });
 
-app.delete('/inventory/:id', (req, res) => {
+api.delete('/inventory/:id', requireAuth, (req, res) => {
   const index = inventory.findIndex(u => u.id === req.params.id);
   if (index === -1) {
     return respondNotFound(res, 'Unit');
   }
   const removed = inventory.splice(index, 1);
   saveData('inventory.json', inventory);
+  auditChange(req, 'delete', 'inventory', removed[0]);
   res.json(removed[0]);
 });
 
-app.get('/inventory/stats', (req, res) => {
+api.get('/inventory/stats', (req, res) => {
   const byCondition = inventory.reduce((acc, unit) => {
     acc[unit.condition] = (acc[unit.condition] || 0) + 1;
     return acc;
@@ -266,11 +396,11 @@ app.get('/inventory/stats', (req, res) => {
   Each team has an id, name and an array of members. Each member has
   firstName, lastName, jobRole, biography and optional socialLinks array.
 */
-app.get('/teams', (req, res) => {
+api.get('/teams', (req, res) => {
   res.json(teams);
 });
 
-app.get('/teams/:id', (req, res) => {
+api.get('/teams/:id', (req, res) => {
   const team = teams.find(t => t.id === req.params.id);
   if (!team) {
     return res.status(404).json({ message: 'Team not found' });
@@ -278,7 +408,7 @@ app.get('/teams/:id', (req, res) => {
   res.json(team);
 });
 
-app.post('/teams', (req, res) => {
+api.post('/teams', requireAuth, (req, res) => {
   const requiredError = validateFields(req.body, ['name']);
   if (requiredError) {
     return res.status(400).json({ message: requiredError });
@@ -294,10 +424,11 @@ app.post('/teams', (req, res) => {
   const team = { id: uuidv4(), members, ...req.body };
   teams.push(team);
   saveData('teams.json', teams);
+  auditChange(req, 'create', 'team', team);
   res.status(201).json(team);
 });
 
-app.put('/teams/:id', (req, res) => {
+api.put('/teams/:id', requireAuth, (req, res) => {
   const index = teams.findIndex(t => t.id === req.params.id);
   if (index === -1) {
     return respondNotFound(res, 'Team');
@@ -311,20 +442,22 @@ app.put('/teams/:id', (req, res) => {
 
   teams[index] = { ...teams[index], ...req.body, members };
   saveData('teams.json', teams);
+  auditChange(req, 'update', 'team', teams[index]);
   res.json(teams[index]);
 });
 
-app.delete('/teams/:id', (req, res) => {
+api.delete('/teams/:id', requireAuth, (req, res) => {
   const index = teams.findIndex(t => t.id === req.params.id);
   if (index === -1) {
     return respondNotFound(res, 'Team');
   }
   const removed = teams.splice(index, 1);
   saveData('teams.json', teams);
+  auditChange(req, 'delete', 'team', removed[0]);
   res.json(removed[0]);
 });
 
-app.get('/teams/roles', (req, res) => {
+api.get('/teams/roles', (req, res) => {
   const roles = new Set();
   teams.forEach(team => {
     team.members?.forEach(member => {
@@ -339,11 +472,11 @@ app.get('/teams/roles', (req, res) => {
   Reviews represent customer testimonials. Each review has id,
   name, rating (number between 1 and 5), content and visibility boolean.
 */
-app.get('/reviews', (req, res) => {
+api.get('/reviews', (req, res) => {
   res.json(reviews);
 });
 
-app.get('/reviews/:id', (req, res) => {
+api.get('/reviews/:id', (req, res) => {
   const review = reviews.find(r => r.id === req.params.id);
   if (!review) {
     return res.status(404).json({ message: 'Review not found' });
@@ -351,7 +484,7 @@ app.get('/reviews/:id', (req, res) => {
   res.json(review);
 });
 
-app.post('/reviews', (req, res) => {
+api.post('/reviews', requireAuth, (req, res) => {
   const requiredError = validateFields(req.body, ['name', 'rating', 'content']);
   if (requiredError) {
     return res.status(400).json({ message: requiredError });
@@ -372,10 +505,11 @@ app.post('/reviews', (req, res) => {
 
   reviews.push(review);
   saveData('reviews.json', reviews);
+  auditChange(req, 'create', 'review', review);
   res.status(201).json(review);
 });
 
-app.put('/reviews/:id', (req, res) => {
+api.put('/reviews/:id', requireAuth, (req, res) => {
   const index = reviews.findIndex(r => r.id === req.params.id);
   if (index === -1) {
     return respondNotFound(res, 'Review');
@@ -393,10 +527,11 @@ app.put('/reviews/:id', (req, res) => {
     visible: sanitizeBoolean(req.body.visible, reviews[index].visible)
   };
   saveData('reviews.json', reviews);
+  auditChange(req, 'update', 'review', reviews[index]);
   res.json(reviews[index]);
 });
 
-app.patch('/reviews/:id/visibility', (req, res) => {
+api.patch('/reviews/:id/visibility', requireAuth, (req, res) => {
   const index = reviews.findIndex(r => r.id === req.params.id);
   if (index === -1) {
     return respondNotFound(res, 'Review');
@@ -407,20 +542,22 @@ app.patch('/reviews/:id/visibility', (req, res) => {
     visible: sanitizeBoolean(req.body.visible, !reviews[index].visible)
   };
   saveData('reviews.json', reviews);
+  auditChange(req, 'update', 'review', reviews[index]);
   res.json(reviews[index]);
 });
 
-app.delete('/reviews/:id', (req, res) => {
+api.delete('/reviews/:id', requireAuth, (req, res) => {
   const index = reviews.findIndex(r => r.id === req.params.id);
   if (index === -1) {
     return respondNotFound(res, 'Review');
   }
   const removed = reviews.splice(index, 1);
   saveData('reviews.json', reviews);
+  auditChange(req, 'delete', 'review', removed[0]);
   res.json(removed[0]);
 });
 
-app.get('/reviews/summary', (req, res) => {
+api.get('/reviews/summary', (req, res) => {
   const visibleReviews = reviews.filter(r => r.visible !== false);
   const averageRating =
     visibleReviews.length > 0
@@ -440,7 +577,7 @@ app.get('/reviews/summary', (req, res) => {
   Leads represent submissions from contact forms. Each lead has id,
   name, email, subject, message and createdAt timestamp.
 */
-app.get('/leads/:id', (req, res) => {
+api.get('/leads/:id', (req, res) => {
   const lead = leads.find(l => l.id === req.params.id);
   if (!lead) {
     return res.status(404).json({ message: 'Lead not found' });
@@ -448,40 +585,46 @@ app.get('/leads/:id', (req, res) => {
   res.json(lead);
 });
 
-app.post('/leads', (req, res) => {
+api.post('/leads', requireAuth, (req, res) => {
   const requiredError = validateFields(req.body, ['name', 'email', 'message']);
   if (requiredError) {
     return res.status(400).json({ message: requiredError });
   }
 
+  const body = sanitizePayloadStrings(req.body, ['name', 'email', 'message', 'subject']);
+
   const lead = {
     id: uuidv4(),
     createdAt: new Date().toISOString(),
-    status: VALID_LEAD_STATUSES.includes(req.body.status) ? req.body.status : 'new',
-    subject: req.body.subject || 'General inquiry',
-    ...req.body
+    status: VALID_LEAD_STATUSES.includes(body.status) ? body.status : 'new',
+    subject: body.subject || 'General inquiry',
+    ...body
   };
   leads.push(lead);
   saveData('leads.json', leads);
+  auditChange(req, 'create', 'lead', lead);
   res.status(201).json(lead);
 });
 
-app.put('/leads/:id', (req, res) => {
+api.put('/leads/:id', requireAuth, (req, res) => {
   const index = leads.findIndex(l => l.id === req.params.id);
   if (index === -1) {
     return respondNotFound(res, 'Lead');
   }
 
-  const status = req.body.status && VALID_LEAD_STATUSES.includes(req.body.status)
-    ? req.body.status
+  const updates = sanitizePayloadStrings(req.body, ['name', 'email', 'message', 'subject']);
+
+  const status = updates.status && VALID_LEAD_STATUSES.includes(updates.status)
+    ? updates.status
     : leads[index].status;
 
-  leads[index] = { ...leads[index], ...req.body, status };
+  leads[index] = { ...leads[index], ...updates, status };
   saveData('leads.json', leads);
+  auditChange(req, 'update', 'lead', leads[index]);
   res.json(leads[index]);
 });
 
-app.patch('/leads/:id/status', (req, res) => {
+api.patch('/leads/:id/status', requireAuth, (req, res) => {
   const index = leads.findIndex(l => l.id === req.params.id);
   if (index === -1) {
     return respondNotFound(res, 'Lead');
@@ -493,20 +636,22 @@ app.patch('/leads/:id/status', (req, res) => {
 
   leads[index] = { ...leads[index], status: req.body.status };
   saveData('leads.json', leads);
+  auditChange(req, 'update', 'lead', leads[index]);
   res.json(leads[index]);
 });
 
-app.delete('/leads/:id', (req, res) => {
+api.delete('/leads/:id', requireAuth, (req, res) => {
   const index = leads.findIndex(l => l.id === req.params.id);
   if (index === -1) {
     return respondNotFound(res, 'Lead');
   }
   const removed = leads.splice(index, 1);
   saveData('leads.json', leads);
+  auditChange(req, 'delete', 'lead', removed[0]);
   res.json(removed[0]);
 });
 
-app.get('/leads', (req, res) => {
+api.get('/leads', (req, res) => {
   const { status, sortBy = 'createdAt', sortDir = 'desc' } = req.query;
   const filtered = status ? leads.filter(lead => lead.status === status) : leads;
 
@@ -526,11 +671,11 @@ app.get('/leads', (req, res) => {
   Settings store dealership contact information and configuration. This
   endpoint returns and updates the single settings object.
 */
-app.get('/settings', (req, res) => {
+api.get('/settings', (req, res) => {
   res.json(settings);
 });
 
-app.put('/settings', (req, res) => {
+api.put('/settings', requireAuth, (req, res) => {
   const requiredError = validateFields(req.body, ['dealershipName', 'phone']);
   if (requiredError) {
     return res.status(400).json({ message: requiredError });
@@ -546,16 +691,20 @@ app.put('/settings', (req, res) => {
     }
   };
   saveData('settings.json', settings);
+  auditChange(req, 'update', 'settings', settings);
   res.json(settings);
 });
 
 // Basic root route with description
-app.get('/', (req, res) => {
+api.get('/', (req, res) => {
   res.json({
     message:
       'RV Dealer Backend API is running. Available resources: /inventory, /teams, /reviews, /leads, /settings'
   });
 });
+
+app.use('/v1', api);
+app.use('/', api);
 
 app.listen(port, () => {
   console.log(`Backend server listening on port ${port}`);
