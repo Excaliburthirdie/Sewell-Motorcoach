@@ -3,6 +3,23 @@ const { datasets, persist } = require('./state');
 const { clampNumber, sanitizeBoolean, validateFields } = require('./shared');
 const { attachTenant, matchesTenant, normalizeTenantId } = require('./tenantService');
 
+const VALID_CONDITION_STATES = ['New', 'Used', 'Demo', 'Pending Sale', 'On Order'];
+const VALID_LOCATION_STATUSES = ['On Lot', 'On Hold', 'Transfer Pending', 'In Transfer'];
+
+function numberOrFallback(value, fallback) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function normalizeFees(fees = []) {
+  if (!Array.isArray(fees)) return [];
+  return fees.map(fee => ({
+    type: fee.type || 'fee',
+    amount: numberOrFallback(fee.amount, 0)
+  }));
+}
+
+function list(query = {}, tenantId) {
 function list(query = {}, tenantId) {
 
 function list(query = {}) {
@@ -12,6 +29,8 @@ function list(query = {}) {
     subcategory,
     condition,
     location,
+    lotId,
+    locationStatus,
     featured,
     minPrice,
     maxPrice,
@@ -32,6 +51,8 @@ function list(query = {}) {
     .filter(unit => !subcategory || unit.subcategory === subcategory)
     .filter(unit => !condition || unit.condition === condition)
     .filter(unit => !location || unit.location === location)
+    .filter(unit => !lotId || unit.lotId === lotId)
+    .filter(unit => !locationStatus || unit.locationStatus === locationStatus)
     .filter(unit => (featured === undefined ? true : sanitizeBoolean(featured) === Boolean(unit.featured)))
     .filter(unit => (minPrice ? Number(unit.price) >= clampNumber(minPrice, Number(unit.price)) : true))
     .filter(unit => (maxPrice ? Number(unit.price) <= clampNumber(maxPrice, Number(unit.price)) : true))
@@ -48,6 +69,7 @@ function list(query = {}) {
     if (sortBy === 'price') return (Number(a.price) - Number(b.price)) * direction;
     if (sortBy === 'msrp') return (Number(a.msrp) - Number(b.msrp)) * direction;
     if (sortBy === 'daysOnLot') return (Number(a.daysOnLot) - Number(b.daysOnLot)) * direction;
+    if (sortBy === 'year') return (Number(a.year) - Number(b.year)) * direction;
     const aDate = new Date(a.createdAt || 0).getTime();
     const bDate = new Date(b.createdAt || 0).getTime();
     return (aDate - bDate) * direction;
@@ -67,6 +89,7 @@ function findById(id, tenantId) {
 }
 
 function create(payload, tenantId) {
+  const requiredError = validateFields(payload, ['stockNumber', 'name', 'vin', 'year', 'condition', 'price']);
 function findById(id) {
   return datasets.inventory.find(u => u.id === id);
 }
@@ -83,6 +106,22 @@ function create(payload) {
     featured: sanitizeBoolean(payload.featured, false),
     createdAt: new Date().toISOString(),
     images: Array.isArray(payload.images) ? payload.images : [],
+    ...payload,
+    locationStatus: VALID_LOCATION_STATUSES.includes(payload.locationStatus) ? payload.locationStatus : 'On Lot',
+    hold: null,
+    transfer: null,
+    msrp: payload.msrp !== undefined ? numberOrFallback(payload.msrp, payload.price) : numberOrFallback(payload.price, 0),
+    salePrice: payload.salePrice !== undefined ? numberOrFallback(payload.salePrice, payload.price) : numberOrFallback(payload.price, 0),
+    rebates: numberOrFallback(payload.rebates, 0),
+    taxes: numberOrFallback(payload.taxes, 0),
+    fees: normalizeFees(payload.fees),
+    length: payload.length !== undefined ? numberOrFallback(payload.length, undefined) : undefined,
+    weight: payload.weight !== undefined ? numberOrFallback(payload.weight, undefined) : undefined
+  }, tenantId);
+
+  if (!VALID_CONDITION_STATES.includes(unit.condition)) {
+    unit.condition = 'New';
+  }
     ...payload
   }, tenantId);
   };
@@ -100,6 +139,80 @@ function update(id, payload) {
     return { notFound: true };
   }
 
+  const previous = { ...datasets.inventory[index] };
+  const base = datasets.inventory[index];
+  const updated = {
+    ...base,
+    ...payload,
+    featured: sanitizeBoolean(payload.featured, base.featured),
+    locationStatus: VALID_LOCATION_STATUSES.includes(payload.locationStatus)
+      ? payload.locationStatus
+      : base.locationStatus || 'On Lot',
+    hold: payload.hold !== undefined ? payload.hold : base.hold || null,
+    transfer: payload.transfer !== undefined ? payload.transfer : base.transfer || null,
+    msrp: payload.msrp !== undefined ? numberOrFallback(payload.msrp, base.msrp) : base.msrp,
+    salePrice: payload.salePrice !== undefined ? numberOrFallback(payload.salePrice, base.salePrice) : base.salePrice,
+    rebates: payload.rebates !== undefined ? numberOrFallback(payload.rebates, base.rebates || 0) : base.rebates,
+    taxes: payload.taxes !== undefined ? numberOrFallback(payload.taxes, base.taxes || 0) : base.taxes,
+    fees: payload.fees !== undefined ? normalizeFees(payload.fees) : base.fees || [],
+    length: payload.length !== undefined ? numberOrFallback(payload.length, base.length) : base.length,
+    weight: payload.weight !== undefined ? numberOrFallback(payload.weight, base.weight) : base.weight
+  };
+
+  if (!VALID_CONDITION_STATES.includes(updated.condition)) {
+    updated.condition = base.condition || 'New';
+  }
+
+  datasets.inventory[index] = updated;
+  persist.inventory(datasets.inventory);
+  return { unit: updated, previous };
+}
+
+function updateLocation(id, payload, tenantId) {
+  const index = datasets.inventory.findIndex(u => u.id === id && matchesTenant(u.tenantId, tenantId));
+  if (index === -1) {
+    return { notFound: true };
+  }
+
+  const previous = { ...datasets.inventory[index] };
+  const base = datasets.inventory[index];
+  const status =
+    payload.locationStatus && VALID_LOCATION_STATUSES.includes(payload.locationStatus)
+      ? payload.locationStatus
+      : base.locationStatus || 'On Lot';
+
+  const updated = {
+    ...base,
+    location: payload.location || base.location,
+    lotId: payload.lotId !== undefined ? payload.lotId : base.lotId,
+    locationStatus: status,
+    transfer: ['Transfer Pending', 'In Transfer'].includes(status) ? base.transfer : null
+  };
+
+  datasets.inventory[index] = updated;
+  persist.inventory(datasets.inventory);
+  return { unit: updated, previous };
+}
+
+function setHold(id, payload, tenantId) {
+  const index = datasets.inventory.findIndex(u => u.id === id && matchesTenant(u.tenantId, tenantId));
+  if (index === -1) {
+    return { notFound: true };
+  }
+
+  const previous = { ...datasets.inventory[index] };
+  const base = datasets.inventory[index];
+
+  const updated = {
+    ...base,
+    hold: payload.hold
+      ? {
+          reason: payload.reason || base.hold?.reason || null,
+          holdUntil: payload.holdUntil || base.hold?.holdUntil || null,
+          setAt: new Date().toISOString()
+        }
+      : null,
+    locationStatus: payload.hold ? 'On Hold' : 'On Lot'
   const updated = {
     ...datasets.inventory[index],
     ...payload,
@@ -108,6 +221,41 @@ function update(id, payload) {
 
   datasets.inventory[index] = updated;
   persist.inventory(datasets.inventory);
+  return { unit: updated, previous };
+}
+
+function updateTransfer(id, payload, tenantId) {
+  const index = datasets.inventory.findIndex(u => u.id === id && matchesTenant(u.tenantId, tenantId));
+  if (index === -1) {
+    return { notFound: true };
+  }
+
+  const previous = { ...datasets.inventory[index] };
+  const base = datasets.inventory[index];
+
+  const status = payload.status || 'Transfer Pending';
+  const transfer = {
+    toLotId: payload.toLotId,
+    toLocation: payload.toLocation,
+    status,
+    requestedAt: base.transfer?.requestedAt || new Date().toISOString()
+  };
+
+  const updated = {
+    ...base,
+    transfer,
+    locationStatus: status === 'Received' ? 'On Lot' : status
+  };
+
+  if (status === 'Received') {
+    updated.location = payload.toLocation;
+    updated.lotId = payload.toLotId;
+    updated.transfer = null;
+  }
+
+  datasets.inventory[index] = updated;
+  persist.inventory(datasets.inventory);
+  return { unit: updated, previous };
   return { unit: updated };
 }
 
@@ -170,6 +318,9 @@ module.exports = {
   findById,
   create,
   update,
+  updateLocation,
+  setHold,
+  updateTransfer,
   setFeatured,
   remove,
   stats

@@ -18,5 +18,25 @@ module.exports = {
   },
   tenancy: {
     defaultTenantId: process.env.DEFAULT_TENANT_ID || 'main'
+  },
+  pii: {
+    maskLogs: process.env.PII_MASK_LOGS !== 'false',
+    maskExports: process.env.PII_MASK_EXPORTS === 'true',
+    replacement: process.env.PII_MASK_REPLACEMENT || '*',
+    sensitiveKeys: (process.env.PII_SENSITIVE_KEYS || 'email,phone,name,message,subject,address,vin')
+      .split(',')
+      .map(key => key.trim().toLowerCase())
+      .filter(Boolean)
+  },
+  cookies: {
+    secure: process.env.COOKIE_SECURE === 'true' || process.env.ENFORCE_HTTPS === 'true',
+    sameSite: (process.env.COOKIE_SAMESITE || 'lax').toLowerCase(),
+    domain: process.env.COOKIE_DOMAIN,
+    path: process.env.COOKIE_PATH || '/'
+  },
+  retention: {
+    leadsDays: Number(process.env.RETENTION_LEADS_DAYS || 365),
+    auditLogDays: Number(process.env.RETENTION_AUDIT_DAYS || 90),
+    intervalHours: Number(process.env.RETENTION_INTERVAL_HOURS || 24)
   }
 };

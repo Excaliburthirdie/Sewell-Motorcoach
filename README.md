@@ -117,17 +117,35 @@ Unauthorized or insufficient roles return a `403` error with a structured machin
 - **Schema-first validation.** Every request body, query and route parameter is
   validated with reusable schemas before entering business logic to keep data
   consistent and predictable across the API surface.
+- **Input sanitization and output escaping.** All incoming body/query/params are
+  sanitized to strip control characters, and JSON responses escape HTML
+  metacharacters to reduce injection risk when embedded downstream.
+- **Security scanning.** Run `npm run scan:deps` locally for dependency CVE
+  coverage and rely on the `Security Scans` GitHub Actions workflow, which also
+  runs a Trivy filesystem scan for container image baselines.
 - **Machine-readable errors.** Failures return a JSON payload with an error
   `code`, human-readable `message` and the `requestId` that traces the request
   end-to-end.
 - **Correlation-aware logging.** Requests and errors are logged as structured
   JSON with log levels, durations and correlation IDs so you can trace
   cross-service flows quickly.
+- **PII redaction controls.** Set `PII_MASK_LOGS`/`PII_MASK_EXPORTS` and
+  `PII_SENSITIVE_KEYS` to mask emails, phones, names, VINs, and other
+  identifiers in audit logs and optional lead exports (`maskPII=true`).
 - **Rate limiting.** Public endpoints are protected by a configurable
   window/max limiter that returns a standardized error code when exceeded.
 - **HTTPS enforcement.** When `ENFORCE_HTTPS=true`, the API rejects downgraded
   traffic and sends HSTS headers (`Strict-Transport-Security`) with the
   configured max-age for secure deployments.
+- **CSRF protection for browser flows.** Every response issues a CSRF token via
+  an `HttpOnly` cookie and the `X-CSRF-Token` response header. All
+  state-changing requests (`POST`, `PUT`, `PATCH`, `DELETE`) must include
+  `X-CSRF-Token` matching the cookie value. Browsers should first call `GET
+  /csrf` to receive the token before submitting forms.
+- **Secure cookie defaults.** CSRF cookies are set with `SameSite` (default:
+  `lax`), `HttpOnly`, and `Secure` when HTTPS is enforced. Override via
+  `COOKIE_SAMESITE`, `COOKIE_SECURE`, `COOKIE_DOMAIN`, and `COOKIE_PATH` to
+  match your deployment.
 consumption.  Mutating requests (POST/PUT/PATCH/DELETE) can optionally be
 protected with a static bearer token by setting the `API_KEY` environment
 variable before starting the server.
@@ -138,10 +156,14 @@ variable before starting the server.
 |  POST  | `/auth/refresh`  | Rotate refresh token and get new access     |
 |  POST  | `/auth/logout`   | Revoke a refresh token                      |
 |  GET   | `/auth/me`       | Return the authenticated principal          |
+|  GET   | `/inventory`     | List all inventory units (filter by condition, lot, status) |
 |  GET   | `/inventory`     | List all inventory units                     |
 |  GET   | `/inventory/:id` | Retrieve a single unit by ID                |
 |  POST  | `/inventory`     | Create a new unit                           |
 |  PUT   | `/inventory/:id` | Update an existing unit                     |
+| PATCH  | `/inventory/:id/location` | Update a unit's lot/location assignment |
+| PATCH  | `/inventory/:id/hold` | Place or release a hold on a unit        |
+| PATCH  | `/inventory/:id/transfer` | Initiate or finalize a lot transfer   |
 |  DELETE| `/inventory/:id` | Delete a unit                               |
 |  GET   | `/teams`         | List all staff teams                        |
 |  GET   | `/teams/:id`     | Retrieve a team by ID                       |
@@ -156,6 +178,15 @@ variable before starting the server.
 |  GET   | `/capabilities`  | List all 100 best-in-class capabilities     |
 |  GET   | `/capabilities/:id` | Retrieve a specific capability by ID      |
 |  GET   | `/capabilities/status` | Report aggregate implementation status |
+
+Leads persist GDPR/CCPA-friendly consent metadata (`marketing`,
+`consentSource`, `privacyPolicyVersion`, `termsAcceptedAt`, optional `ip`
+and `userAgent`) and keep it through updates. Inventory units now include VIN,
+model year, length, weight, chassis, lot identifiers, location status (On Lot,
+On Hold, Transfer Pending, In Transfer), transfer requests, and detailed
+pricing inputs (`rebates`, `taxes`, `fees`) alongside MSRP, price, and sale
+price to support compliance and quoting workflows. Query inventory by `lotId`
+or `locationStatus` to surface location-aware stock.
 |  GET   | `/leads`         | List all leads                              |
 |  GET   | `/leads/:id`     | Retrieve a lead by ID                       |
 |  POST  | `/leads`         | Record a new lead submission                |
@@ -183,6 +214,12 @@ layer.
   duration in JSON.
 - **Rate limiting** protects the API by default (300 requests per minute
   per IP, configurable via environment variables).
+- **Audit logging** writes all create/update/delete operations, including
+  sensitive pricing/discount changes, to `data/audit.log` with request/user
+  context and before/after values for traceability.
+- **Data retention** automatically archives leads older than the configured
+  retention period and prunes audit logs on a scheduled interval; adjust via
+  `RETENTION_LEADS_DAYS`, `RETENTION_AUDIT_DAYS`, and `RETENTION_INTERVAL_HOURS`.
 - **Audit logging** writes all create/update/delete operations to
   `data/audit.log` alongside the request identifier and payload.
 - **Health** and **metrics** endpoints provide lightweight readiness

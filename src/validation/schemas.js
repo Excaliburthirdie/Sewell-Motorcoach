@@ -1,6 +1,9 @@
 const { z } = require('./zodLite');
 const { VALID_LEAD_STATUSES } = require('../services/leadService');
 
+const VALID_INVENTORY_CONDITIONS = ['New', 'Used', 'Demo', 'Pending Sale', 'On Order'];
+const VALID_LOCATION_STATUSES = ['On Lot', 'On Hold', 'Transfer Pending', 'In Transfer'];
+
 const paginationSchema = z.object({
   limit: z
     .union([z.string(), z.number()])
@@ -27,6 +30,9 @@ const inventoryListQuery = paginationSchema.extend({
   industry: z.string().trim().optional(),
   category: z.string().trim().optional(),
   subcategory: z.string().trim().optional(),
+  condition: z.enum(VALID_INVENTORY_CONDITIONS).optional(),
+  lotId: z.string().trim().optional(),
+  locationStatus: z.enum(VALID_LOCATION_STATUSES).optional(),
   condition: z.string().trim().optional(),
   location: z.string().trim().optional(),
   featured: z
@@ -46,11 +52,44 @@ const inventoryListQuery = paginationSchema.extend({
     .optional()
     .transform(val => (val === undefined ? undefined : Number(val))),
   search: z.string().trim().min(1).optional(),
+  sortBy: z.enum(['createdAt', 'price', 'msrp', 'daysOnLot', 'year']).optional(),
   sortBy: z.enum(['createdAt', 'price', 'msrp', 'daysOnLot']).optional(),
   sortDir: z.enum(['asc', 'desc']).optional(),
   tenantId: z.string().trim().min(1).optional()
 });
 
+const feeItem = z.object({
+  type: z.string().trim(),
+  amount: z.union([z.number(), z.string()]).transform(val => Number(val))
+});
+
+const inventoryBase = z.object({
+  stockNumber: z.string().trim(),
+  name: z.string().trim(),
+  vin: z
+    .string()
+    .trim()
+    .min(11)
+    .max(17),
+  year: z
+    .union([z.number(), z.string()])
+    .transform(val => Number(val))
+    .refine(val => val >= 1980 && val <= 2100, { message: 'year must be reasonable' }),
+  condition: z.enum(VALID_INVENTORY_CONDITIONS),
+  price: z.union([z.number(), z.string()]).transform(val => Number(val)),
+  msrp: z.union([z.number(), z.string()]).optional().transform(val => (val === undefined ? undefined : Number(val))),
+  salePrice: z.union([z.number(), z.string()]).optional().transform(val => (val === undefined ? undefined : Number(val))),
+  rebates: z.union([z.number(), z.string()]).optional().transform(val => (val === undefined ? 0 : Number(val))),
+  taxes: z.union([z.number(), z.string()]).optional().transform(val => (val === undefined ? 0 : Number(val))),
+  fees: z.array(feeItem).optional(),
+  length: z.union([z.number(), z.string()]).optional().transform(val => (val === undefined ? undefined : Number(val))),
+  weight: z.union([z.number(), z.string()]).optional().transform(val => (val === undefined ? undefined : Number(val))),
+  chassis: z.string().trim().optional(),
+  industry: z.string().trim().optional(),
+  category: z.string().trim().optional(),
+  subcategory: z.string().trim().optional(),
+  lotId: z.string().trim().optional(),
+  locationStatus: z.enum(VALID_LOCATION_STATUSES).optional(),
 const inventoryBase = z.object({
   stockNumber: z.string().trim(),
   name: z.string().trim(),
@@ -71,6 +110,21 @@ const inventoryBase = z.object({
 const inventoryCreate = inventoryBase;
 const inventoryUpdate = inventoryBase.partial();
 const inventoryFeatureUpdate = z.object({ featured: z.boolean() });
+const inventoryLocationUpdate = z.object({
+  location: z.string().trim(),
+  lotId: z.string().trim().optional(),
+  locationStatus: z.enum(VALID_LOCATION_STATUSES).optional()
+});
+const inventoryHoldUpdate = z.object({
+  hold: z.boolean(),
+  reason: z.string().trim().optional(),
+  holdUntil: z.string().trim().optional()
+});
+const inventoryTransferUpdate = z.object({
+  toLotId: z.string().trim(),
+  toLocation: z.string().trim(),
+  status: z.enum(['Transfer Pending', 'In Transfer', 'Received']).optional()
+});
 
 const teamMember = z.object({
   firstName: z.string().trim(),
@@ -98,12 +152,24 @@ const reviewCreate = z.object({
 const reviewUpdate = reviewCreate.partial();
 const reviewVisibilityUpdate = z.object({ visible: z.boolean() });
 
+const consentDetails = z.object({
+  marketing: z.boolean(),
+  privacyPolicyVersion: z.string().trim().optional(),
+  termsAcceptedAt: z.string().trim().optional(),
+  consentSource: z.string().trim().optional(),
+  timestamp: z.string().trim().optional(),
+  ip: z.string().trim().optional(),
+  userAgent: z.string().trim().optional()
+});
+
 const leadCreate = z.object({
   name: z.string().trim(),
   email: z.string().trim().email(),
   message: z.string().trim(),
   subject: z.string().trim().optional(),
   status: z.enum(VALID_LEAD_STATUSES).optional(),
+  interestedStockNumber: z.string().trim().optional(),
+  consent: consentDetails.optional()
   interestedStockNumber: z.string().trim().optional()
 });
 const leadUpdate = leadCreate.partial();
@@ -112,6 +178,8 @@ const leadListQuery = z.object({
   status: z.enum(VALID_LEAD_STATUSES).optional(),
   sortBy: z.enum(['createdAt', 'name']).optional(),
   sortDir: z.enum(['asc', 'desc']).optional(),
+  tenantId: z.string().trim().min(1).optional(),
+  maskPII: z.boolean().optional()
   tenantId: z.string().trim().min(1).optional()
 });
 
@@ -148,6 +216,9 @@ module.exports = {
     inventoryCreate,
     inventoryUpdate,
     inventoryFeatureUpdate,
+    inventoryLocationUpdate,
+    inventoryHoldUpdate,
+    inventoryTransferUpdate,
     teamCreate,
     teamUpdate,
     reviewCreate,

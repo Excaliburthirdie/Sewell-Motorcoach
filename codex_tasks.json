@@ -108,72 +108,96 @@
   {
     "id": 15,
     "text": "Input sanitization and output escaping to mitigate injection risks.",
+    "status": "done",
+    "note": "Added request/response sanitization middleware with HTML-escaping to mitigate injection risks."
     "status": "pending",
     "note": ""
   },
   {
     "id": 16,
     "text": "CSRF protection for browser-based consumers.",
+    "status": "done",
+    "note": "Added CSRF protection middleware issuing tokens via cookie/header and new /csrf endpoint."
     "status": "pending",
     "note": ""
   },
   {
     "id": 17,
     "text": "Secure cookie settings with SameSite and HttpOnly flags where applicable.",
+    "status": "done",
+    "note": "Hardened cookie defaults with SameSite, Secure, and HttpOnly options for CSRF token delivery."
     "status": "pending",
     "note": ""
   },
   {
     "id": 18,
     "text": "Automated security scanning for dependencies and container images.",
+    "status": "done",
+    "note": "Added npm audit script plus GitHub Actions workflow running dependency and Trivy filesystem scans."
     "status": "pending",
     "note": ""
   },
   {
     "id": 19,
     "text": "Audit logging for changes to sensitive data such as pricing and discounts.",
+    "status": "done",
+    "note": "Captured pricing/discount changes with before/after values, actor context, and audit log persistence."
     "status": "pending",
     "note": ""
   },
   {
     "id": 20,
     "text": "Data retention policies with automatic archival and deletion routines.",
+    "status": "done",
+    "note": "Scheduled retention worker archiving aged leads and pruning audit logs per configurable intervals."
     "status": "pending",
     "note": ""
   },
   {
     "id": 21,
     "text": "Configurable PII masking for logs and exports.",
+    "status": "done",
+    "note": "Config-driven PII masking for audit logs and optional lead exports with sensitive key controls."
     "status": "pending",
     "note": ""
   },
   {
     "id": 22,
     "text": "GDPR/CCPA-compliant consent tracking for lead capture and marketing.",
+    "status": "done",
+    "note": "Leads capture consent metadata (marketing opt-in, source, timestamps, IP/UA) with validation."
     "status": "pending",
     "note": ""
   },
   {
     "id": 23,
     "text": "Inventory schema that tracks VIN, year, length, weight and chassis details.",
+    "status": "done",
+    "note": "Inventory units track VIN, model year, length, weight, chassis with seeded examples."
     "status": "pending",
     "note": ""
   },
   {
     "id": 24,
     "text": "Support for multiple condition states (new, used, demo, pending sale).",
+    "status": "done",
+    "note": "Condition states expanded to New/Used/Demo/Pending Sale and reflected in seed data."
     "status": "pending",
     "note": ""
   },
   {
     "id": 25,
     "text": "Pricing fields for MSRP, sale price, rebates, taxes and fees.",
+    "status": "done",
+    "note": "Pricing model includes sale price, rebates, taxes, fees with normalized storage and audits."
     "status": "pending",
     "note": ""
   },
   {
     "id": 26,
     "text": "Location-aware stock with transfer and hold statuses across lots.",
+    "status": "done",
+    "note": "Added lot-aware inventory with hold/transfer endpoints, validation, and seeded status fields."
     "status": "pending",
     "note": ""
   },

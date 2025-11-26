@@ -5,6 +5,40 @@ const { attachTenant, matchesTenant, normalizeTenantId } = require('./tenantServ
 
 const VALID_LEAD_STATUSES = ['new', 'contacted', 'qualified', 'won', 'lost'];
 
+function normalizedConsent(consentInput) {
+  const now = new Date().toISOString();
+  if (!consentInput || typeof consentInput !== 'object') {
+    return {
+      marketing: false,
+      consentSource: 'unspecified',
+      termsAcceptedAt: now,
+      timestamp: now
+    };
+  }
+  return {
+    marketing: Boolean(consentInput.marketing),
+    privacyPolicyVersion: consentInput.privacyPolicyVersion || 'latest',
+    termsAcceptedAt: consentInput.termsAcceptedAt || now,
+    consentSource: consentInput.consentSource || 'unspecified',
+    timestamp: consentInput.timestamp || now,
+    ip: consentInput.ip,
+    userAgent: consentInput.userAgent
+  };
+}
+
+function ensureConsent(lead) {
+  if (!lead) return lead;
+  if (!lead.consent) {
+    lead.consent = normalizedConsent();
+  }
+  return lead;
+}
+
+function findById(id, tenantId) {
+  return ensureConsent(datasets.leads.find(l => l.id === id && matchesTenant(l.tenantId, tenantId)));
+}
+
+function create(payload, tenantId) {
 function findById(id, tenantId) {
   return datasets.leads.find(l => l.id === id && matchesTenant(l.tenantId, tenantId));
 }
@@ -25,12 +59,18 @@ function create(payload) {
 
   const body = sanitizePayloadStrings(payload, ['name', 'email', 'message', 'subject']);
 
+  const consent = normalizedConsent(body.consent);
+
+  const lead = attachTenant({
   const lead = attachTenant({
   const lead = {
     id: uuidv4(),
     createdAt: new Date().toISOString(),
     status: VALID_LEAD_STATUSES.includes(body.status) ? body.status : 'new',
     subject: body.subject || 'General inquiry',
+    ...body,
+    consent
+  }, tenantId);
     ...body
   }, tenantId);
   };
@@ -53,6 +93,9 @@ function update(id, payload) {
     ? updates.status
     : datasets.leads[index].status;
 
+  const consent = updates.consent ? normalizedConsent(updates.consent) : ensureConsent(datasets.leads[index]).consent;
+
+  datasets.leads[index] = { ...datasets.leads[index], ...updates, status, consent };
   datasets.leads[index] = { ...datasets.leads[index], ...updates, status };
   persist.leads(datasets.leads);
   return { lead: datasets.leads[index] };
@@ -70,6 +113,7 @@ function setStatus(id, status) {
     return { error: `Status must be one of: ${VALID_LEAD_STATUSES.join(', ')}` };
   }
 
+  datasets.leads[index] = ensureConsent({ ...datasets.leads[index], status });
   datasets.leads[index] = { ...datasets.leads[index], status };
   persist.leads(datasets.leads);
   return { lead: datasets.leads[index] };
@@ -84,12 +128,15 @@ function remove(id) {
   }
   const [removed] = datasets.leads.splice(index, 1);
   persist.leads(datasets.leads);
+  return { lead: ensureConsent(removed) };
   return { lead: removed };
 }
 
 function list(query = {}, tenantId) {
   const { status, sortBy = 'createdAt', sortDir = 'desc' } = query;
   const tenant = normalizeTenantId(tenantId);
+  const scoped = datasets.leads.filter(lead => matchesTenant(lead.tenantId, tenant)).map(ensureConsent);
+  const filtered = status ? scoped.filter(lead => lead.status === status) : scoped;
   const scoped = datasets.leads.filter(lead => matchesTenant(lead.tenantId, tenant));
   const filtered = status ? scoped.filter(lead => lead.status === status) : scoped;
 function list(query = {}) {
