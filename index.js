@@ -255,11 +255,21 @@ api.get('/capabilities/status', (req, res) => {
   res.json(capabilityService.status());
 });
 
-api.get('/inventory', (req, res) => {
-  res.json(inventoryService.list(req.query, req.tenant.id));
+api.get('/inventory/stats', (req, res) => {
+  res.json(inventoryService.stats(req.tenant.id));
 });
 
-api.get('/inventory/:id', validateParams(schemas.inventoryId), (req, res, next) => {
+api.get('/inventory', validateQuery(schemas.inventoryListQuery), (req, res) => {
+  res.json(inventoryService.list(req.validated.query, req.tenant.id));
+});
+
+api.get('/inventory/slug/:slug', (req, res, next) => {
+  const unit = inventoryService.findBySlug(req.params.slug, req.tenant.id);
+  if (!unit) return next(new AppError('NOT_FOUND', 'Inventory not found', 404));
+  res.json(unit);
+});
+
+api.get('/inventory/:id', validateParams(schemas.idParam), (req, res, next) => {
   const unit = inventoryService.findById(req.validated.params.id, req.tenant.id);
   if (!unit) return next(new AppError('NOT_FOUND', 'Inventory not found', 404));
   res.json(unit);
@@ -268,6 +278,7 @@ api.get('/inventory/:id', validateParams(schemas.inventoryId), (req, res, next) 
 api.post('/inventory', requireAuth, authorize(['admin', 'sales']), validateBody(schemas.inventoryCreate), (req, res, next) => {
   const result = inventoryService.create(req.validated.body, req.tenant.id);
   if (result.error) return next(new AppError('VALIDATION_ERROR', result.error, 400));
+  if (result.conflict) return next(new AppError('CONFLICT', result.conflict, 409));
   auditChange(req, 'create', 'inventory', result.unit);
   res.status(201).json(result.unit);
 });
@@ -275,12 +286,24 @@ api.post('/inventory', requireAuth, authorize(['admin', 'sales']), validateBody(
 api.put('/inventory/:id', requireAuth, authorize(['admin', 'sales']), validateBody(schemas.inventoryUpdate), (req, res, next) => {
   const result = inventoryService.update(req.params.id, req.validated.body, req.tenant.id);
   if (result.notFound) return next(new AppError('NOT_FOUND', 'Inventory not found', 404));
+  if (result.conflict) return next(new AppError('CONFLICT', result.conflict, 409));
   auditChange(req, 'update', 'inventory', result.unit);
   if (result.pricingChanges?.length) {
     auditChange(req, 'price_change', 'inventory', { id: result.unit.id, changes: result.pricingChanges });
   }
   res.json(result.unit);
 });
+
+api.post(
+  '/inventory/import',
+  requireAuth,
+  authorize(['admin', 'sales']),
+  validateBody(schemas.inventoryBulkImport),
+  (req, res) => {
+    const result = inventoryService.importCsv(req.validated.body.csv, req.validated.body.tenantId || req.tenant.id);
+    res.status(result.errors.length ? 207 : 201).json(result);
+  }
+);
 
 api.patch('/inventory/:id/feature', requireAuth, authorize(['admin', 'sales']), (req, res, next) => {
   const result = inventoryService.setFeatured(req.params.id, req.body.featured, req.tenant.id);
@@ -296,8 +319,8 @@ api.delete('/inventory/:id', requireAuth, authorize(['admin']), (req, res, next)
   res.status(204).send();
 });
 
-api.get('/leads', requireAuth, authorize(['admin', 'sales', 'marketing']), (req, res) => {
-  res.json(leadService.list(req.query, req.tenant.id));
+api.get('/leads', requireAuth, authorize(['admin', 'sales', 'marketing']), validateQuery(schemas.leadListQuery), (req, res) => {
+  res.json(leadService.list(req.validated.query, req.tenant.id));
 });
 
 api.get('/leads/:id', requireAuth, authorize(['admin', 'sales', 'marketing']), (req, res, next) => {
@@ -315,6 +338,7 @@ api.post('/leads', validateBody(schemas.leadCreate), (req, res, next) => {
 api.put('/leads/:id', requireAuth, authorize(['admin', 'sales', 'marketing']), validateBody(schemas.leadUpdate), (req, res, next) => {
   const result = leadService.update(req.params.id, req.validated.body, req.tenant.id);
   if (result.notFound) return next(new AppError('NOT_FOUND', 'Lead not found', 404));
+  if (result.error) return next(new AppError('VALIDATION_ERROR', result.error, 400));
   res.json(result.lead);
 });
 
