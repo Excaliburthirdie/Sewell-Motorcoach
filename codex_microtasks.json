@@ -1,0 +1,286 @@
+[
+  {
+    "id": 1,
+    "area": "inventory",
+    "layer": "data",
+    "text": "Extend inventory schema with VIN, year, length, weight, and chassis fields plus validation in schemas and services.",
+    "depends_on": [],
+    "status": "done"
+  },
+  {
+    "id": 2,
+    "area": "inventory",
+    "layer": "infra",
+    "text": "Add migration/backfill script to seed existing inventory records with default values for new spec fields to avoid validation breaks.",
+    "depends_on": [
+      1
+    ],
+    "status": "done"
+  },
+  {
+    "id": 3,
+    "area": "inventory",
+    "layer": "service",
+    "text": "Enforce per-tenant VIN uniqueness on inventory create/update and return 409 errors on conflicts.",
+    "depends_on": [
+      1
+    ],
+    "status": "done"
+  },
+  {
+    "id": 4,
+    "area": "inventory",
+    "layer": "api",
+    "text": "Restrict inventory condition to allowed states (new, used, demo, pending_sale) with schema enums and list filtering.",
+    "depends_on": [
+      1
+    ],
+    "status": "done"
+  },
+  {
+    "id": 5,
+    "area": "inventory",
+    "layer": "service",
+    "text": "Add pricing breakdown fields (rebates, fees, taxes) and compute derived totalPrice in inventory responses.",
+    "depends_on": [
+      1
+    ],
+    "status": "done"
+  },
+  {
+    "id": 6,
+    "area": "inventory",
+    "layer": "service",
+    "text": "Introduce location stock details (lot code, transferStatus, holdUntil) with validation and list filters.",
+    "depends_on": [
+      1
+    ],
+    "status": "done"
+  },
+  {
+    "id": 7,
+    "area": "inventory",
+    "layer": "data",
+    "text": "Support inventory media extras (floorplans, virtualTours, videoLinks) with URL validation and persistence.",
+    "depends_on": [
+      1
+    ],
+    "status": "done"
+  },
+  {
+    "id": 8,
+    "area": "inventory",
+    "layer": "api",
+    "text": "Expose GET /inventory/stats endpoint returning per-tenant aggregate stats using inventoryService.stats.",
+    "depends_on": [],
+    "status": "done"
+  },
+  {
+    "id": 9,
+    "area": "inventory",
+    "layer": "api",
+    "text": "Include pagination metadata (limit, offset, total) in inventory list responses and align validation defaults.",
+    "depends_on": [],
+    "status": "done"
+  },
+  {
+    "id": 10,
+    "area": "inventory",
+    "layer": "api",
+    "text": "Implement bulk inventory CSV import endpoint that validates rows and creates units per tenant with a summary report.",
+    "depends_on": [
+      1,
+      5
+    ],
+    "status": "done"
+  },
+  {
+    "id": 11,
+    "area": "website",
+    "layer": "data",
+    "text": "Add SEO fields to inventory (slug, metaTitle, metaDescription) with per-tenant slug uniqueness validation.",
+    "depends_on": [
+      1
+    ],
+    "status": "done"
+  },
+  {
+    "id": 12,
+    "area": "website",
+    "layer": "api",
+    "text": "Create GET /inventory/slug/:slug endpoint to fetch inventory by slug for public detail pages.",
+    "depends_on": [
+      11
+    ],
+    "status": "done"
+  },
+  {
+    "id": 13,
+    "area": "leads",
+    "layer": "data",
+    "text": "Capture marketing attribution on leads (utmSource, utmMedium, utmCampaign, utmTerm, referrer) with validation and storage.",
+    "depends_on": [],
+    "status": "done"
+  },
+  {
+    "id": 14,
+    "area": "leads",
+    "layer": "service",
+    "text": "Add lead assignment field (assignedTo) with role validation and filtering in lead listings.",
+    "depends_on": [
+      13
+    ],
+    "status": "done"
+  },
+  {
+    "id": 15,
+    "area": "leads",
+    "layer": "data",
+    "text": "Track lead follow-up dates (dueDate, lastContactedAt) with ISO date validation and sortable listing support.",
+    "depends_on": [],
+    "status": "done"
+  },
+  {
+    "id": 16,
+    "area": "leads",
+    "layer": "service",
+    "text": "Log lead status and assignment changes to audit.log with requestId, actor, and before/after payloads.",
+    "depends_on": [
+      14
+    ],
+    "status": "done"
+  },
+  {
+    "id": 17,
+    "area": "leads",
+    "layer": "service",
+    "text": "Enforce valid lead status transitions (e.g., new\u2192contacted\u2192qualified\u2192won/lost) with error codes on invalid hops.",
+    "depends_on": [],
+    "status": "done"
+  },
+  {
+    "id": 18,
+    "area": "website",
+    "layer": "api",
+    "text": "Add dealership content pages CRUD (title, body, slug, meta) with tenant scoping and RBAC for admin/marketing roles.",
+    "depends_on": [],
+    "status": "done"
+  },
+  {
+    "id": 19,
+    "area": "website",
+    "layer": "api",
+    "text": "Generate sitemap endpoint combining inventory slugs and content page slugs for SEO consumption.",
+    "depends_on": [
+      11,
+      18
+    ],
+    "status": "done"
+  },
+  {
+    "id": 20,
+    "area": "marketing",
+    "layer": "api",
+    "text": "Implement /events endpoint to record marketing events (search, view, lead_submit) with schema validation and tenant scoping.",
+    "depends_on": [],
+    "status": "done"
+  },
+  {
+    "id": 21,
+    "area": "marketing",
+    "layer": "service",
+    "text": "Add daily rollup service summarizing events and leads for dashboard KPIs exposed via /metrics or dedicated endpoint.",
+    "depends_on": [
+      20
+    ],
+    "status": "done"
+  },
+  {
+    "id": 22,
+    "area": "security",
+    "layer": "middleware",
+    "text": "Add login-specific rate limiter with exponential backoff per IP to mitigate credential stuffing.",
+    "depends_on": [],
+    "status": "done"
+  },
+  {
+    "id": 23,
+    "area": "security",
+    "layer": "service",
+    "text": "Detect refresh token reuse and maintain a blacklist/store of revoked tokens to block replay.",
+    "depends_on": [],
+    "status": "done"
+  },
+  {
+    "id": 24,
+    "area": "observability",
+    "layer": "service",
+    "text": "Capture request latency and status metrics per route and expose aggregates in /metrics output.",
+    "depends_on": [],
+    "status": "done"
+  },
+  {
+    "id": 25,
+    "area": "observability",
+    "layer": "api",
+    "text": "Enhance /health to verify data directory writability and return tenant counts for readiness checks.",
+    "depends_on": [],
+    "status": "done"
+  },
+  {
+    "id": 26,
+    "area": "performance",
+    "layer": "service",
+    "text": "Cache capability list responses with in-memory TTL and manual invalidation hook to reduce repeated reads.",
+    "depends_on": [],
+    "status": "done"
+  },
+  {
+    "id": 27,
+    "area": "tests",
+    "layer": "infra",
+    "text": "Set up Jest test runner with npm test script and base configuration for unit/integration tests.",
+    "depends_on": [],
+    "status": "done"
+  },
+  {
+    "id": 28,
+    "area": "tests",
+    "layer": "tests",
+    "text": "Add unit tests for inventory service filters and VIN uniqueness constraints using seeded fixtures.",
+    "depends_on": [
+      1,
+      3,
+      27
+    ],
+    "status": "done"
+  },
+  {
+    "id": 29,
+    "area": "tests",
+    "layer": "tests",
+    "text": "Add integration tests for auth + CSRF flow covering login, refresh rotation, and protected route access.",
+    "depends_on": [
+      27
+    ],
+    "status": "done"
+  },
+  {
+    "id": 30,
+    "area": "dx",
+    "layer": "docs",
+    "text": "Document multi-tenant auth, CSRF expectations, and header requirements in README for API consumers.",
+    "depends_on": [],
+    "status": "done"
+  },
+  {
+    "id": 31,
+    "area": "dx",
+    "layer": "docs",
+    "text": "Add developer runbook for bulk import workflow including sample CSV layout and troubleshooting steps.",
+    "depends_on": [
+      10
+    ],
+    "status": "done"
+  }
+]

@@ -3,7 +3,15 @@ const { datasets, persist } = require('./state');
 const { clampNumber, escapeOutputPayload, sanitizeBoolean, validateFields } = require('./shared');
 const { attachTenant, matchesTenant, normalizeTenantId } = require('./tenantService');
 
-const PRICING_FIELDS = ['price', 'msrp', 'salePrice', 'fees', 'taxes'];
+const PRICING_FIELDS = ['price', 'msrp', 'salePrice', 'fees', 'taxes', 'rebates'];
+
+function calculateTotalPrice(unit) {
+  const price = Number(unit.salePrice ?? unit.price ?? 0);
+  const fees = Number(unit.fees ?? 0);
+  const taxes = Number(unit.taxes ?? 0);
+  const rebates = Number(unit.rebates ?? 0);
+  return Math.max(0, price + fees + taxes - rebates);
+}
 
 function safeUnit(unit) {
   return escapeOutputPayload(unit);
@@ -16,6 +24,7 @@ function list(query = {}, tenantId) {
     subcategory,
     condition,
     location,
+    transferStatus,
     featured,
     minPrice,
     maxPrice,
@@ -34,6 +43,7 @@ function list(query = {}, tenantId) {
     .filter(unit => !subcategory || unit.subcategory === subcategory)
     .filter(unit => !condition || unit.condition === condition)
     .filter(unit => !location || unit.location === location)
+    .filter(unit => !transferStatus || unit.transferStatus === transferStatus)
     .filter(unit => (featured === undefined ? true : sanitizeBoolean(featured) === Boolean(unit.featured)))
     .filter(unit => (minPrice ? Number(unit.price) >= clampNumber(minPrice, Number(unit.price)) : true))
     .filter(unit => (maxPrice ? Number(unit.price) <= clampNumber(maxPrice, Number(unit.price)) : true))
@@ -58,9 +68,15 @@ function list(query = {}, tenantId) {
   const start = clampNumber(offset, 0);
   const end = limit ? start + clampNumber(limit, filtered.length) : filtered.length;
 
+  const appliedLimit = limit ? clampNumber(limit, filtered.length) : undefined;
+
   return {
-    total: sorted.length,
-    items: sorted.slice(start, end).map(safeUnit)
+    items: sorted.slice(start, end).map(safeUnit),
+    meta: {
+      total: sorted.length,
+      limit: appliedLimit,
+      offset: start
+    }
   };
 }
 
@@ -70,9 +86,25 @@ function findById(id, tenantId) {
 }
 
 function create(payload, tenantId) {
-  const requiredError = validateFields(payload, ['stockNumber', 'name', 'condition', 'price']);
+  const requiredError = validateFields(payload, ['stockNumber', 'vin', 'name', 'condition', 'price']);
   if (requiredError) {
     return { error: requiredError };
+  }
+
+  const normalizedTenant = normalizeTenantId(tenantId);
+  const vinExists = datasets.inventory.some(
+    unit => matchesTenant(unit.tenantId, normalizedTenant) && unit.vin === payload.vin
+  );
+  if (vinExists) {
+    return { error: 'VIN must be unique per tenant' };
+  }
+  if (payload.slug) {
+    const slugExists = datasets.inventory.some(
+      unit => matchesTenant(unit.tenantId, normalizedTenant) && unit.slug === payload.slug
+    );
+    if (slugExists) {
+      return { error: 'Slug must be unique per tenant' };
+    }
   }
 
   const unit = attachTenant(
@@ -81,10 +113,15 @@ function create(payload, tenantId) {
       featured: sanitizeBoolean(payload.featured, false),
       createdAt: new Date().toISOString(),
       images: Array.isArray(payload.images) ? payload.images : [],
+      floorplans: Array.isArray(payload.floorplans) ? payload.floorplans : [],
+      virtualTours: Array.isArray(payload.virtualTours) ? payload.virtualTours : [],
+      videoLinks: Array.isArray(payload.videoLinks) ? payload.videoLinks : [],
       ...payload
     },
     tenantId
   );
+
+  unit.totalPrice = calculateTotalPrice(unit);
 
   datasets.inventory.push(unit);
   persist.inventory(datasets.inventory);
@@ -103,6 +140,24 @@ function update(id, payload, tenantId) {
     ...payload,
     featured: sanitizeBoolean(payload.featured, datasets.inventory[index].featured)
   };
+
+  const normalizedTenant = normalizeTenantId(tenantId);
+  const vinExists = datasets.inventory.some(
+    unit => unit.vin === updated.vin && matchesTenant(unit.tenantId, normalizedTenant) && unit.id !== id
+  );
+  if (vinExists) {
+    return { error: 'VIN must be unique per tenant' };
+  }
+  if (updated.slug) {
+    const slugExists = datasets.inventory.some(
+      unit => unit.slug === updated.slug && matchesTenant(unit.tenantId, normalizedTenant) && unit.id !== id
+    );
+    if (slugExists) {
+      return { error: 'Slug must be unique per tenant' };
+    }
+  }
+
+  updated.totalPrice = calculateTotalPrice(updated);
 
   const pricingChanges = PRICING_FIELDS.reduce((changes, field) => {
     const before = previous[field];
@@ -163,9 +218,16 @@ function stats(tenantId) {
   };
 }
 
+function findBySlug(slug, tenantId) {
+  const tenant = normalizeTenantId(tenantId);
+  const unit = datasets.inventory.find(item => matchesTenant(item.tenantId, tenant) && item.slug === slug);
+  return unit ? safeUnit(unit) : undefined;
+}
+
 module.exports = {
   list,
   findById,
+  findBySlug,
   create,
   update,
   setFeatured,

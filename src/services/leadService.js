@@ -1,10 +1,32 @@
 const { v4: uuidv4 } = require('uuid');
+const fs = require('fs');
 const { datasets, persist } = require('./state');
+const { DATA_DIR } = require('../persistence/store');
 const { escapeOutputPayload, sanitizeBoolean, sanitizePayloadStrings, validateFields } = require('./shared');
 const { maskSensitiveFields } = require('./security');
 const { attachTenant, matchesTenant, normalizeTenantId } = require('./tenantService');
 
 const VALID_LEAD_STATUSES = ['new', 'contacted', 'qualified', 'won', 'lost'];
+const VALID_TRANSITIONS = {
+  new: ['contacted', 'qualified', 'lost'],
+  contacted: ['qualified', 'lost', 'won'],
+  qualified: ['won', 'lost'],
+  won: [],
+  lost: []
+};
+
+function auditLeadChange(tenantId, leadId, actor, before, after) {
+  const record = {
+    timestamp: new Date().toISOString(),
+    tenantId,
+    entity: 'lead',
+    id: leadId,
+    actor,
+    before: maskSensitiveFields(before),
+    after: maskSensitiveFields(after)
+  };
+  fs.appendFile(`${DATA_DIR}/audit.log`, `${JSON.stringify(record)}\n`, () => {});
+}
 
 function safeLead(lead) {
   return escapeOutputPayload(lead);
@@ -21,7 +43,18 @@ function create(payload, tenantId) {
     return { error: requiredError };
   }
 
-  const body = sanitizePayloadStrings(payload, ['name', 'email', 'message', 'subject']);
+  const body = sanitizePayloadStrings(payload, [
+    'name',
+    'email',
+    'message',
+    'subject',
+    'utmSource',
+    'utmMedium',
+    'utmCampaign',
+    'utmTerm',
+    'referrer',
+    'assignedTo'
+  ]);
 
   const lead = attachTenant(
     {
@@ -29,6 +62,9 @@ function create(payload, tenantId) {
       createdAt: new Date().toISOString(),
       status: VALID_LEAD_STATUSES.includes(body.status) ? body.status : 'new',
       subject: body.subject || 'General inquiry',
+      assignedTo: body.assignedTo,
+      dueDate: body.dueDate,
+      lastContactedAt: body.lastContactedAt,
       ...body
     },
     tenantId
@@ -44,14 +80,27 @@ function update(id, payload, tenantId) {
     return { notFound: true };
   }
 
-  const updates = sanitizePayloadStrings(payload, ['name', 'email', 'message', 'subject']);
+  const updates = sanitizePayloadStrings(payload, [
+    'name',
+    'email',
+    'message',
+    'subject',
+    'utmSource',
+    'utmMedium',
+    'utmCampaign',
+    'utmTerm',
+    'referrer',
+    'assignedTo'
+  ]);
 
   const status = updates.status && VALID_LEAD_STATUSES.includes(updates.status)
     ? updates.status
     : datasets.leads[index].status;
 
+  const before = { ...datasets.leads[index] };
   datasets.leads[index] = { ...datasets.leads[index], ...updates, status };
   persist.leads(datasets.leads);
+  auditLeadChange(tenantId, id, 'system', before, datasets.leads[index]);
   return { lead: safeLead(datasets.leads[index]) };
 }
 
@@ -64,9 +113,15 @@ function setStatus(id, status, tenantId) {
   if (!VALID_LEAD_STATUSES.includes(status)) {
     return { error: `Status must be one of: ${VALID_LEAD_STATUSES.join(', ')}` };
   }
+  const current = datasets.leads[index].status;
+  if (!VALID_TRANSITIONS[current].includes(status)) {
+    return { error: `Invalid status transition from ${current} to ${status}` };
+  }
 
-  datasets.leads[index] = { ...datasets.leads[index], status };
+  const before = { ...datasets.leads[index] };
+  datasets.leads[index] = { ...datasets.leads[index], status, lastContactedAt: new Date().toISOString() };
   persist.leads(datasets.leads);
+  auditLeadChange(tenantId, id, 'system', before, datasets.leads[index]);
   return { lead: safeLead(datasets.leads[index]) };
 }
 
