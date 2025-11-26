@@ -26,15 +26,13 @@ const capabilityListQuery = paginationSchema.extend({
   tenantId: z.string().trim().min(1).optional()
 });
 
-const INVENTORY_CONDITIONS = ['new', 'used', 'demo', 'pending_sale'];
-
 const inventoryListQuery = paginationSchema.extend({
   industry: z.string().trim().optional(),
   category: z.string().trim().optional(),
   subcategory: z.string().trim().optional(),
   condition: z.enum(INVENTORY_CONDITIONS).optional(),
   location: z.string().trim().optional(),
-  transferStatus: z.enum(['available', 'in_transit', 'on_hold']).optional(),
+  transferStatus: z.enum(TRANSFER_STATUSES).optional(),
   featured: z
     .union([z.boolean(), z.string()])
     .optional()
@@ -82,7 +80,7 @@ const inventoryBase = z.object({
   subcategory: z.string().trim().optional(),
   location: z.string().trim().optional(),
   lotCode: z.string().trim().optional(),
-  transferStatus: z.enum(['available', 'in_transit', 'on_hold']).optional(),
+  transferStatus: z.enum(TRANSFER_STATUSES).optional(),
   holdUntil: z.string().trim().optional(),
   daysOnLot: z.union([z.number(), z.string()]).optional().transform(val => (val === undefined ? undefined : Number(val))),
   images: z.array(z.string().url()).optional(),
@@ -207,6 +205,7 @@ module.exports = {
     authRefresh
   },
   constants: {
-    INVENTORY_CONDITIONS
+    INVENTORY_CONDITIONS,
+    TRANSFER_STATUSES
   }
 };

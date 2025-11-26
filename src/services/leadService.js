@@ -14,6 +14,7 @@ const VALID_TRANSITIONS = {
   won: [],
   lost: []
 };
+const ASSIGNABLE_ROLES = ['admin', 'sales', 'marketing'];
 
 function auditLeadChange(tenantId, leadId, actor, before, after) {
   const record = {
@@ -39,7 +40,7 @@ function sanitizeDate(value) {
 }
 
 function isValidTransition(previous, next) {
-  const allowed = VALID_STATUS_TRANSITIONS[previous] || [];
+  const allowed = VALID_TRANSITIONS[previous] || [];
   return allowed.includes(next);
 }
 
@@ -74,12 +75,12 @@ function create(payload, tenantId) {
     {
       id: uuidv4(),
       createdAt: new Date().toISOString(),
+      ...body,
       status,
       subject: body.subject || 'General inquiry',
-      assignedTo: body.assignedTo,
-      dueDate: body.dueDate,
-      lastContactedAt: body.lastContactedAt,
-      ...body
+      assignedTo,
+      dueDate: sanitizeDate(body.dueDate),
+      lastContactedAt: sanitizeDate(body.lastContactedAt)
     },
     tenantId
   );
@@ -117,7 +118,18 @@ function update(id, payload, tenantId) {
   }
 
   const before = { ...datasets.leads[index] };
-  datasets.leads[index] = { ...datasets.leads[index], ...updates, status };
+  const assignedTo = ASSIGNABLE_ROLES.includes(updates.assignedTo)
+    ? updates.assignedTo
+    : datasets.leads[index].assignedTo;
+
+  datasets.leads[index] = {
+    ...datasets.leads[index],
+    ...updates,
+    status: nextStatus,
+    assignedTo,
+    dueDate: sanitizeDate(updates.dueDate) || datasets.leads[index].dueDate,
+    lastContactedAt: sanitizeDate(updates.lastContactedAt) || datasets.leads[index].lastContactedAt
+  };
   persist.leads(datasets.leads);
   auditLeadChange(tenantId, id, 'system', before, datasets.leads[index]);
   return { lead: safeLead(datasets.leads[index]) };

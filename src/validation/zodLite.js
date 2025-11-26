@@ -59,13 +59,21 @@ class StringSchema extends BaseSchema {
   constructor() {
     super();
     this._min = null;
+    this._max = null;
     this._trim = false;
     this._email = false;
+    this._url = false;
   }
 
   min(value) {
     const clone = this._clone();
     clone._min = value;
+    return clone;
+  }
+
+  max(value) {
+    const clone = this._clone();
+    clone._max = value;
     return clone;
   }
 
@@ -81,6 +89,12 @@ class StringSchema extends BaseSchema {
     return clone;
   }
 
+  url() {
+    const clone = this._clone();
+    clone._url = true;
+    return clone;
+  }
+
   parse(input, path = []) {
     const optionalCheck = this._applyOptional(input);
     if (optionalCheck.success !== null) {
@@ -93,8 +107,14 @@ class StringSchema extends BaseSchema {
     if (this._min !== null && value.length < this._min) {
       return this._error(`Must be at least ${this._min} characters`, path);
     }
+    if (this._max !== null && value.length > this._max) {
+      return this._error(`Must be at most ${this._max} characters`, path);
+    }
     if (this._email && !/^\S+@\S+\.\S+$/.test(value)) {
       return this._error('Invalid email', path);
+    }
+    if (this._url && !/^https?:\/\//i.test(value)) {
+      return this._error('Invalid url', path);
     }
     value = this._applyTransform(value);
     const refined = this._applyRefine(value);
