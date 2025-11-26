@@ -55,6 +55,7 @@ let inventory = loadData('inventory.json', []);
 let teams = loadData('teams.json', []);
 let reviews = loadData('reviews.json', []);
 let leads = loadData('leads.json', []);
+let capabilities = loadData('capabilities.json', []);
 let settings = loadData('settings.json', {
   dealershipName: 'Sewell Motorcoach',
   address: '2118 Danville Rd',
@@ -70,6 +71,38 @@ let settings = loadData('settings.json', {
     saturday: '10:00 AM - 4:00 PM',
     sunday: 'Closed'
   }
+});
+
+/*
+  CAPABILITY ROUTES
+  Provide a machine-readable version of the 100 must-have capabilities
+  outlined in the README so other services and front-ends can consume
+  the checklist directly from the API.
+*/
+app.get('/capabilities', (req, res) => {
+  const { search, limit, offset } = req.query;
+
+  const filtered = capabilities.filter(capability => {
+    if (!search) return true;
+    return capability.description.toLowerCase().includes(search.toLowerCase());
+  });
+
+  const start = clampNumber(offset, 0);
+  const end = limit ? start + clampNumber(limit, filtered.length) : filtered.length;
+
+  res.json({
+    total: filtered.length,
+    items: filtered.slice(start, end)
+  });
+});
+
+app.get('/capabilities/:id', (req, res) => {
+  const id = Number(req.params.id);
+  const capability = capabilities.find(item => item.id === id);
+  if (!capability) {
+    return respondNotFound(res, 'Capability');
+  }
+  res.json(capability);
 });
 
 /*

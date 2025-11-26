@@ -73,6 +73,8 @@ HTTP.
 |  POST  | `/reviews`       | Add a new review                            |
 |  PUT   | `/reviews/:id`   | Update a review                             |
 |  DELETE| `/reviews/:id`   | Delete a review                             |
+|  GET   | `/capabilities`  | List all 100 best-in-class capabilities     |
+|  GET   | `/capabilities/:id` | Retrieve a specific capability by ID      |
 |  GET   | `/leads`         | List all leads                              |
 |  GET   | `/leads/:id`     | Retrieve a lead by ID                       |
 |  POST  | `/leads`         | Record a new lead submission                |
@@ -111,6 +113,10 @@ Feel free to tailor the code to your needs and build upon the
 foundation provided here.
 
 ## 100 must-have capabilities for a best-in-class RV dealership backend
+
+These items are also exposed via the API at `GET /capabilities` (full
+list) and `GET /capabilities/:id` (single item) for front-end display or
+automation workflows.
 
 1. Layered architecture separating routing, business logic and persistence for clarity.
 2. Domain models for inventory, leads, customers, service tickets and finance offers.
