@@ -4,26 +4,14 @@ const { clampNumber, escapeOutputPayload, sanitizeBoolean, sanitizeString, valid
 const { attachTenant, matchesTenant, normalizeTenantId } = require('./tenantService');
 const { INVENTORY_CONDITIONS, TRANSFER_STATUSES } = require('../validation/schemas');
 
-const PRICING_FIELDS = ['price', 'msrp', 'salePrice', 'rebates', 'fees', 'taxes'];
+const PRICING_FIELDS = ['price', 'msrp', 'salePrice', 'fees', 'taxes', 'rebates'];
 
 function calculateTotalPrice(unit) {
-  const price = Number(unit.price || 0);
-  const rebates = Number(unit.rebates || 0);
-  const fees = Number(unit.fees || 0);
-  const taxes = Number(unit.taxes || 0);
-  return price - rebates + fees + taxes;
-}
-
-function sanitizeCondition(condition) {
-  if (!condition) return undefined;
-  const lowered = condition.toLowerCase();
-  return INVENTORY_CONDITIONS.includes(lowered) ? lowered : condition;
-}
-
-function sanitizeTransferStatus(status) {
-  if (!status) return undefined;
-  const lowered = status.toLowerCase();
-  return TRANSFER_STATUSES.includes(lowered) ? lowered : status;
+  const price = Number(unit.salePrice ?? unit.price ?? 0);
+  const fees = Number(unit.fees ?? 0);
+  const taxes = Number(unit.taxes ?? 0);
+  const rebates = Number(unit.rebates ?? 0);
+  return Math.max(0, price + fees + taxes - rebates);
 }
 
 function safeUnit(unit) {
@@ -56,7 +44,7 @@ function list(query = {}, tenantId) {
     .filter(unit => !subcategory || unit.subcategory === subcategory)
     .filter(unit => !condition || sanitizeCondition(unit.condition) === condition)
     .filter(unit => !location || unit.location === location)
-    .filter(unit => !transferStatus || sanitizeTransferStatus(unit.transferStatus) === transferStatus)
+    .filter(unit => !transferStatus || unit.transferStatus === transferStatus)
     .filter(unit => (featured === undefined ? true : sanitizeBoolean(featured) === Boolean(unit.featured)))
     .filter(unit => (minPrice ? Number(unit.price) >= clampNumber(minPrice, Number(unit.price)) : true))
     .filter(unit => (maxPrice ? Number(unit.price) <= clampNumber(maxPrice, Number(unit.price)) : true))
@@ -81,11 +69,15 @@ function list(query = {}, tenantId) {
   const start = clampNumber(offset, 0);
   const end = limit ? start + clampNumber(limit, filtered.length) : filtered.length;
 
+  const appliedLimit = limit ? clampNumber(limit, filtered.length) : undefined;
+
   return {
-    total: sorted.length,
-    limit: clampNumber(limit, sorted.length),
-    offset: start,
-    items: sorted.slice(start, end).map(safeUnit)
+    items: sorted.slice(start, end).map(safeUnit),
+    meta: {
+      total: sorted.length,
+      limit: appliedLimit,
+      offset: start
+    }
   };
 }
 
@@ -123,20 +115,25 @@ function hasSlugConflict(slug, tenantId, currentId) {
 }
 
 function create(payload, tenantId) {
-  const requiredError = validateFields(payload, ['stockNumber', 'name', 'condition', 'price']);
+  const requiredError = validateFields(payload, ['stockNumber', 'vin', 'name', 'condition', 'price']);
   if (requiredError) {
     return { error: requiredError };
   }
 
-  const normalizedCondition = sanitizeCondition(payload.condition) || 'new';
-
-  if (hasVinConflict(payload.vin, tenantId)) {
-    return { conflict: 'VIN already exists for this tenant' };
+  const normalizedTenant = normalizeTenantId(tenantId);
+  const vinExists = datasets.inventory.some(
+    unit => matchesTenant(unit.tenantId, normalizedTenant) && unit.vin === payload.vin
+  );
+  if (vinExists) {
+    return { error: 'VIN must be unique per tenant' };
   }
-
-  const slug = payload.slug || slugify(payload.name || payload.stockNumber);
-  if (hasSlugConflict(slug, tenantId)) {
-    return { conflict: 'Slug already exists for this tenant' };
+  if (payload.slug) {
+    const slugExists = datasets.inventory.some(
+      unit => matchesTenant(unit.tenantId, normalizedTenant) && unit.slug === payload.slug
+    );
+    if (slugExists) {
+      return { error: 'Slug must be unique per tenant' };
+    }
   }
 
   const unit = attachTenant(
@@ -148,18 +145,12 @@ function create(payload, tenantId) {
       floorplans: Array.isArray(payload.floorplans) ? payload.floorplans : [],
       virtualTours: Array.isArray(payload.virtualTours) ? payload.virtualTours : [],
       videoLinks: Array.isArray(payload.videoLinks) ? payload.videoLinks : [],
-      ...payload,
-      condition: normalizedCondition,
-      transferStatus: sanitizeTransferStatus(payload.transferStatus) || 'none',
-      holdUntil: payload.holdUntil,
-      rebates: Number(payload.rebates || 0),
-      fees: Number(payload.fees || 0),
-      taxes: Number(payload.taxes || 0),
-      vin: payload.vin ? sanitizeString(payload.vin) : undefined,
-      slug
+      ...payload
     },
     tenantId
   );
+
+  unit.totalPrice = calculateTotalPrice(unit);
 
   datasets.inventory.push(unit);
   persist.inventory(datasets.inventory);
@@ -194,6 +185,24 @@ function update(id, payload, tenantId) {
     vin: payload.vin ? sanitizeString(payload.vin) : previous.vin,
     slug: proposedSlug
   };
+
+  const normalizedTenant = normalizeTenantId(tenantId);
+  const vinExists = datasets.inventory.some(
+    unit => unit.vin === updated.vin && matchesTenant(unit.tenantId, normalizedTenant) && unit.id !== id
+  );
+  if (vinExists) {
+    return { error: 'VIN must be unique per tenant' };
+  }
+  if (updated.slug) {
+    const slugExists = datasets.inventory.some(
+      unit => unit.slug === updated.slug && matchesTenant(unit.tenantId, normalizedTenant) && unit.id !== id
+    );
+    if (slugExists) {
+      return { error: 'Slug must be unique per tenant' };
+    }
+  }
+
+  updated.totalPrice = calculateTotalPrice(updated);
 
   const pricingChanges = PRICING_FIELDS.reduce((changes, field) => {
     const before = previous[field];
@@ -254,67 +263,10 @@ function stats(tenantId) {
   };
 }
 
-function parseListField(value) {
-  if (!value) return [];
-  return String(value)
-    .split('|')
-    .map(entry => sanitizeString(entry))
-    .filter(Boolean);
-}
-
-function normalizeRowPayload(row) {
-  const numericFields = ['price', 'msrp', 'salePrice', 'rebates', 'fees', 'taxes', 'year', 'length', 'weight', 'daysOnLot'];
-  const payload = { ...row };
-  numericFields.forEach(field => {
-    if (payload[field] !== undefined) {
-      const value = Number(payload[field]);
-      payload[field] = Number.isFinite(value) ? value : undefined;
-    }
-  });
-
-  if (payload.featured !== undefined) {
-    payload.featured = sanitizeBoolean(payload.featured, false);
-  }
-
-  ['images', 'floorplans', 'virtualTours', 'videoLinks'].forEach(field => {
-    if (payload[field] && typeof payload[field] === 'string') {
-      payload[field] = parseListField(payload[field]);
-    }
-  });
-
-  if (payload.condition) payload.condition = sanitizeCondition(payload.condition);
-  if (payload.transferStatus) payload.transferStatus = sanitizeTransferStatus(payload.transferStatus);
-  if (payload.slug) payload.slug = slugify(payload.slug);
-
-  return payload;
-}
-
-function importCsv(csv, tenantId) {
-  const rows = csv
-    .split(/\r?\n/)
-    .map(line => line.trim())
-    .filter(Boolean);
-  if (rows.length <= 1) {
-    return { created: 0, errors: [{ row: 0, message: 'No data rows provided' }] };
-  }
-
-  const headers = rows[0].split(',').map(header => header.trim());
-  const createdUnits = [];
-  const errors = [];
-
-  for (let i = 1; i < rows.length; i++) {
-    const columns = rows[i].split(',');
-    const row = headers.reduce((acc, header, idx) => ({ ...acc, [header]: columns[idx] }), {});
-    const payload = normalizeRowPayload(row);
-    const result = create(payload, tenantId);
-    if (result.error || result.conflict) {
-      errors.push({ row: i + 1, message: result.error || result.conflict });
-      continue;
-    }
-    createdUnits.push(result.unit);
-  }
-
-  return { created: createdUnits.length, errors, items: createdUnits };
+function findBySlug(slug, tenantId) {
+  const tenant = normalizeTenantId(tenantId);
+  const unit = datasets.inventory.find(item => matchesTenant(item.tenantId, tenant) && item.slug === slug);
+  return unit ? safeUnit(unit) : undefined;
 }
 
 module.exports = {
