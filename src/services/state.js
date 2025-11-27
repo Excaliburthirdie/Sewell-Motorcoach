@@ -54,6 +54,7 @@ const normalizeTenants = tenantsData => {
 const datasets = {
   tenants: normalizeTenants(loadData('tenants.json', [])),
   inventory: normalizeTenantedCollection(loadData('inventory.json', [])),
+  inventoryRevisions: normalizeTenantedCollection(loadData('inventoryRevisions.json', [])),
   teams: normalizeTenantedCollection(loadData('teams.json', [])),
   reviews: normalizeTenantedCollection(loadData('reviews.json', [])),
   leads: normalizeTenantedCollection(loadData('leads.json', [])),
@@ -72,7 +73,11 @@ const datasets = {
   pageLayouts: normalizeTenantedCollection(loadData('pageLayouts.json', [])),
   aiControl: loadData('aiControl.json', { providers: [], agents: [], observations: [], webFetches: [] }),
   webhooks: normalizeTenantedCollection(loadData('webhooks.json', [])),
-  webhookDeliveries: normalizeTenantedCollection(loadData('webhookDeliveries.json', []))
+  webhookDeliveries: normalizeTenantedCollection(loadData('webhookDeliveries.json', [])),
+  redirects: normalizeTenantedCollection(loadData('redirects.json', [])),
+  spotlightTemplates: normalizeTenantedCollection(loadData('spotlightTemplates.json', [])),
+  blockPresets: normalizeTenantedCollection(loadData('blockPresets.json', [])),
+  experiments: normalizeTenantedCollection(loadData('experiments.json', []))
 };
 
 const persist = {
@@ -96,7 +101,12 @@ const persist = {
   pageLayouts: data => saveData('pageLayouts.json', data),
   aiControl: data => saveData('aiControl.json', data),
   webhooks: data => saveData('webhooks.json', data),
-  webhookDeliveries: data => saveData('webhookDeliveries.json', data)
+  webhookDeliveries: data => saveData('webhookDeliveries.json', data),
+  redirects: data => saveData('redirects.json', data),
+  inventoryRevisions: data => saveData('inventoryRevisions.json', data),
+  spotlightTemplates: data => saveData('spotlightTemplates.json', data),
+  blockPresets: data => saveData('blockPresets.json', data),
+  experiments: data => saveData('experiments.json', data)
 };
 
 module.exports = {

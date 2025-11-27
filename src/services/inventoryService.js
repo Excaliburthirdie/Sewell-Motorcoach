@@ -6,6 +6,7 @@ const {
   constants: { INVENTORY_CONDITIONS, TRANSFER_STATUSES }
 } = require('../validation/schemas');
 const { computeInventoryBadges } = require('./inventoryBadges');
+const { addRevision, TRACKED_FIELDS } = require('./inventoryRevisionService');
 
 const PRICING_FIELDS = ['price', 'msrp', 'salePrice', 'fees', 'taxes', 'rebates'];
 
@@ -316,6 +317,12 @@ function update(id, payload, tenantId) {
     holdUntil: sanitizeHoldUntil(payload.holdUntil) || previous.holdUntil
   };
 
+  TRACKED_FIELDS.forEach(field => {
+    if (payload[field] !== undefined && payload[field] !== previous[field]) {
+      addRevision(id, field, previous[field], tenantId, payload.updatedBy);
+    }
+  });
+
   const normalizedTenant = normalizeTenantId(tenantId);
   const vinExists = datasets.inventory.some(
     unit => unit.vin === updated.vin && matchesTenant(unit.tenantId, normalizedTenant) && unit.id !== id
@@ -394,9 +401,10 @@ function stats(tenantId) {
   };
 }
 
-function updateStory(id, salesStory, tenantId) {
+function updateStory(id, salesStory, tenantId, changedBy) {
   const index = datasets.inventory.findIndex(u => u.id === id && matchesTenant(u.tenantId, tenantId));
   if (index === -1) return { notFound: true };
+  addRevision(id, 'salesStory', datasets.inventory[index].salesStory, tenantId, changedBy);
   const updated = { ...datasets.inventory[index], salesStory: sanitizeString(salesStory).slice(0, 4000) };
   updated.badges = computeInventoryBadges(updated, tenantId);
   datasets.inventory[index] = updated;
@@ -404,9 +412,10 @@ function updateStory(id, salesStory, tenantId) {
   return { unit: safeUnit(updated, tenantId) };
 }
 
-function updateSpotlights(id, spotlights, tenantId) {
+function updateSpotlights(id, spotlights, tenantId, changedBy) {
   const index = datasets.inventory.findIndex(u => u.id === id && matchesTenant(u.tenantId, tenantId));
   if (index === -1) return { notFound: true };
+  addRevision(id, 'spotlights', datasets.inventory[index].spotlights, tenantId, changedBy);
   const updated = { ...datasets.inventory[index], spotlights: normalizeSpotlights(spotlights) };
   updated.badges = computeInventoryBadges(updated, tenantId);
   datasets.inventory[index] = updated;
@@ -414,9 +423,10 @@ function updateSpotlights(id, spotlights, tenantId) {
   return { unit: safeUnit(updated, tenantId) };
 }
 
-function updateMediaHotspots(id, mediaHotspots, tenantId) {
+function updateMediaHotspots(id, mediaHotspots, tenantId, changedBy) {
   const index = datasets.inventory.findIndex(u => u.id === id && matchesTenant(u.tenantId, tenantId));
   if (index === -1) return { notFound: true };
+  addRevision(id, 'mediaHotspots', datasets.inventory[index].mediaHotspots, tenantId, changedBy);
   const updated = { ...datasets.inventory[index], mediaHotspots: normalizeMediaHotspots(mediaHotspots) };
   updated.badges = computeInventoryBadges(updated, tenantId);
   datasets.inventory[index] = updated;
@@ -504,6 +514,28 @@ function importCsv(csv, tenantId) {
   return { created, errors };
 }
 
+function recomputeBadges(body, tenantId) {
+  const normalizedTenant = normalizeTenantId(tenantId);
+  const targetIds = body.all ? datasets.inventory.filter(u => matchesTenant(u.tenantId, normalizedTenant)).map(u => u.id) : body.inventoryIds;
+  const updatedUnits = [];
+  datasets.inventory = datasets.inventory.map(unit => {
+    if (!matchesTenant(unit.tenantId, normalizedTenant)) return unit;
+    if (!targetIds.includes(unit.id)) return unit;
+    const next = { ...unit };
+    next.badges = computeInventoryBadges(next, normalizedTenant);
+    next.totalPrice = calculateTotalPrice(next);
+    updatedUnits.push(next.id);
+    return next;
+  });
+  persist.inventory(datasets.inventory);
+  return { updated: updatedUnits.length, ids: updatedUnits };
+}
+
+function previewBadges(payload, tenantId) {
+  const unitDraft = { ...payload };
+  return computeInventoryBadges(unitDraft, tenantId);
+}
+
 module.exports = {
   list,
   findById,
@@ -517,5 +549,7 @@ module.exports = {
   updateStory,
   updateSpotlights,
   updateMediaHotspots,
-  updateMedia
+  updateMedia,
+  recomputeBadges,
+  previewBadges
 };

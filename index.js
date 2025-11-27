@@ -29,6 +29,11 @@ const tenantService = require('./src/services/tenantService');
 const webhookService = require('./src/services/webhookService');
 const auditLogService = require('./src/services/auditLogService');
 const exportService = require('./src/services/exportService');
+const redirectService = require('./src/services/redirectService');
+const inventoryRevisionService = require('./src/services/inventoryRevisionService');
+const spotlightTemplateService = require('./src/services/spotlightTemplateService');
+const blockPresetService = require('./src/services/blockPresetService');
+const experimentService = require('./src/services/experimentService');
 const { validateBody, validateParams, validateQuery } = require('./src/middleware/validation');
 const { schemas } = require('./src/validation/schemas');
 const { AppError, errorHandler } = require('./src/middleware/errors');
@@ -438,6 +443,33 @@ api.get('/inventory/:id', validateParams(schemas.idParam), (req, res, next) => {
   res.json(unit);
 });
 
+api.get(
+  '/inventory/:id/revisions',
+  requireAuth,
+  authorize(['admin', 'sales', 'marketing']),
+  validateParams(schemas.idParam),
+  (req, res) => {
+    res.json({ revisions: inventoryRevisionService.listRevisions(req.validated.params.id, req.tenant.id) });
+  }
+);
+
+api.post(
+  '/inventory/:id/revisions/:revisionId/restore',
+  requireAuth,
+  authorize(['admin']),
+  validateParams(schemas.idParam),
+  (req, res, next) => {
+    const result = inventoryRevisionService.restoreRevision(
+      req.params.id,
+      req.params.revisionId,
+      req.tenant.id
+    );
+    if (result.notFound) return next(new AppError('NOT_FOUND', 'Revision not found', 404));
+    auditChange(req, 'restore', 'inventory_revision', { revisionId: req.params.revisionId, id: req.params.id });
+    res.json({ unit: result.unit, revision: result.revision });
+  }
+);
+
 api.get('/inventory/:id/schema', validateParams(schemas.idParam), (req, res, next) => {
   const result = inventorySchemaService.getSchemaForInventory(req.validated.params.id, req.tenant.id);
   if (result.notFound) return next(new AppError('NOT_FOUND', 'Inventory not found', 404));
@@ -454,7 +486,11 @@ api.post('/inventory', requireAuth, authorize(['admin', 'sales']), validateBody(
 });
 
 api.put('/inventory/:id', requireAuth, authorize(['admin', 'sales']), validateBody(schemas.inventoryUpdate), (req, res, next) => {
-  const result = inventoryService.update(req.params.id, req.validated.body, req.tenant.id);
+  const result = inventoryService.update(
+    req.params.id,
+    { ...req.validated.body, updatedBy: req.user?.email || req.user?.id },
+    req.tenant.id
+  );
   if (result.notFound) return next(new AppError('NOT_FOUND', 'Inventory not found', 404));
   if (result.error) return next(new AppError('VALIDATION_ERROR', result.error, 400));
   auditChange(req, 'update', 'inventory', result.unit);
@@ -471,7 +507,12 @@ api.patch(
   authorize(['admin', 'sales']),
   validateBody(schemas.inventoryStoryUpdate),
   (req, res, next) => {
-    const result = inventoryService.updateStory(req.params.id, req.validated.body.salesStory, req.tenant.id);
+    const result = inventoryService.updateStory(
+      req.params.id,
+      req.validated.body.salesStory,
+      req.tenant.id,
+      req.user?.email || req.user?.id
+    );
     if (result.notFound) return next(new AppError('NOT_FOUND', 'Inventory not found', 404));
     auditChange(req, 'update', 'inventory_story', result.unit);
     res.json(result.unit);
@@ -484,7 +525,12 @@ api.patch(
   authorize(['admin', 'sales', 'marketing']),
   validateBody(schemas.inventorySpotlightsUpdate),
   (req, res, next) => {
-    const result = inventoryService.updateSpotlights(req.params.id, req.validated.body.spotlights, req.tenant.id);
+    const result = inventoryService.updateSpotlights(
+      req.params.id,
+      req.validated.body.spotlights,
+      req.tenant.id,
+      req.user?.email || req.user?.id
+    );
     if (result.notFound) return next(new AppError('NOT_FOUND', 'Inventory not found', 404));
     auditChange(req, 'update', 'inventory_spotlights', result.unit);
     res.json(result.unit);
@@ -500,7 +546,8 @@ api.patch(
     const result = inventoryService.updateMediaHotspots(
       req.params.id,
       req.validated.body.mediaHotspots,
-      req.tenant.id
+      req.tenant.id,
+      req.user?.email || req.user?.id
     );
     if (result.notFound) return next(new AppError('NOT_FOUND', 'Inventory not found', 404));
     auditChange(req, 'update', 'inventory_hotspots', result.unit);
@@ -520,6 +567,82 @@ api.patch(
     res.json(result.unit);
   }
 );
+
+api.post(
+  '/inventory/badges/preview',
+  requireAuth,
+  authorize(['admin', 'sales', 'marketing']),
+  validateBody(schemas.badgePreview),
+  (req, res) => {
+    res.json({ badges: inventoryService.previewBadges(req.validated.body, req.tenant.id) });
+  }
+);
+
+api.post(
+  '/inventory/bulk/spotlights/apply-template',
+  requireAuth,
+  authorize(['admin', 'marketing']),
+  validateBody(schemas.spotlightTemplateApply),
+  (req, res, next) => {
+    const result = spotlightTemplateService.applyTemplate(
+      req.validated.body.templateId,
+      req.validated.body.inventoryIds,
+      req.tenant.id
+    );
+    if (result.notFound) return next(new AppError('NOT_FOUND', 'Template not found', 404));
+    auditChange(req, 'bulk_update', 'inventory_spotlights', { templateId: result.template.id, ids: result.applied });
+    res.json(result);
+  }
+);
+
+api.post(
+  '/inventory/bulk/recompute-badges',
+  requireAuth,
+  authorize(['admin', 'marketing']),
+  validateBody(schemas.badgeRecompute),
+  (req, res) => {
+    const result = inventoryService.recomputeBadges(req.validated.body, req.tenant.id);
+    auditChange(req, 'bulk_update', 'inventory_badges', { ids: result.ids });
+    res.json(result);
+  }
+);
+
+api.get('/spotlight-templates', requireAuth, authorize(['admin', 'marketing']), (req, res) => {
+  res.json({ templates: spotlightTemplateService.list(req.tenant.id) });
+});
+
+api.post(
+  '/spotlight-templates',
+  requireAuth,
+  authorize(['admin', 'marketing']),
+  validateBody(schemas.spotlightTemplateCreate),
+  (req, res) => {
+    const result = spotlightTemplateService.create(req.validated.body, req.tenant.id, req.user?.email || req.user?.id);
+    auditChange(req, 'create', 'spotlight_template', result.template);
+    res.status(201).json(result.template);
+  }
+);
+
+api.patch(
+  '/spotlight-templates/:id',
+  requireAuth,
+  authorize(['admin', 'marketing']),
+  validateParams(schemas.idParam),
+  validateBody(schemas.spotlightTemplateUpdate),
+  (req, res, next) => {
+    const result = spotlightTemplateService.update(req.params.id, req.validated.body, req.tenant.id);
+    if (result.notFound) return next(new AppError('NOT_FOUND', 'Template not found', 404));
+    auditChange(req, 'update', 'spotlight_template', result.template);
+    res.json(result.template);
+  }
+);
+
+api.delete('/spotlight-templates/:id', requireAuth, authorize(['admin', 'marketing']), validateParams(schemas.idParam), (req, res, next) => {
+  const result = spotlightTemplateService.remove(req.params.id, req.tenant.id);
+  if (result.notFound) return next(new AppError('NOT_FOUND', 'Template not found', 404));
+  auditChange(req, 'delete', 'spotlight_template', { id: req.params.id });
+  res.status(204).send();
+});
 
 api.post(
   '/inventory/import',
@@ -542,6 +665,27 @@ api.get('/content/slug/:slug', (req, res, next) => {
   res.json(page);
 });
 
+api.get('/pages/:slug', (req, res, next) => {
+  const isPreview = req.query.mode === 'preview';
+  const handleLookup = () => {
+    const page = contentPageService.findBySlug(req.params.slug, req.tenant.id, { preview: isPreview });
+    if (!page) return next(new AppError('NOT_FOUND', 'Content page not found', 404));
+    res.json(page);
+  };
+
+  if (!isPreview) {
+    return handleLookup();
+  }
+
+  return requireAuth(req, res, err => {
+    if (err) return next(err);
+    if (!['admin', 'marketing'].includes(req.user?.role)) {
+      return next(new AppError('FORBIDDEN', 'Insufficient role for preview', 403));
+    }
+    return handleLookup();
+  });
+});
+
 api.get('/content/:id', validateParams(schemas.idParam), (req, res, next) => {
   const page = contentPageService.findById(req.validated.params.id, req.tenant.id);
   if (!page) return next(new AppError('NOT_FOUND', 'Content page not found', 404));
@@ -549,14 +693,19 @@ api.get('/content/:id', validateParams(schemas.idParam), (req, res, next) => {
 });
 
 api.post('/content', requireAuth, authorize(['admin', 'marketing']), validateBody(schemas.contentPageCreate), (req, res, next) => {
-  const result = contentPageService.create(req.validated.body, req.tenant.id);
+  const result = contentPageService.create(req.validated.body, req.tenant.id, req.user?.email || req.user?.id);
   if (result.error) return next(new AppError('VALIDATION_ERROR', result.error, 400));
   if (result.conflict) return next(new AppError('CONFLICT', result.conflict, 409));
   res.status(201).json(result.page);
 });
 
 api.put('/content/:id', requireAuth, authorize(['admin', 'marketing']), validateBody(schemas.contentPageUpdate), (req, res, next) => {
-  const result = contentPageService.update(req.params.id, req.validated.body, req.tenant.id);
+  const result = contentPageService.update(
+    req.params.id,
+    req.validated.body,
+    req.tenant.id,
+    req.user?.email || req.user?.id
+  );
   if (result.notFound) return next(new AppError('NOT_FOUND', 'Content page not found', 404));
   if (result.error) return next(new AppError('VALIDATION_ERROR', result.error, 400));
   if (result.conflict) return next(new AppError('CONFLICT', result.conflict, 409));
@@ -568,6 +717,24 @@ api.delete('/content/:id', requireAuth, authorize(['admin', 'marketing']), (req,
   if (result.notFound) return next(new AppError('NOT_FOUND', 'Content page not found', 404));
   res.status(204).send();
 });
+
+api.post(
+  '/pages/:id/publish',
+  requireAuth,
+  authorize(['admin', 'marketing']),
+  validateParams(schemas.idParam),
+  validateBody(schemas.pagePublish),
+  (req, res, next) => {
+    const result = contentPageService.publish(
+      req.params.id,
+      req.tenant.id,
+      req.validated.body.publishAt,
+      req.user?.email || req.user?.id
+    );
+    if (result.notFound) return next(new AppError('NOT_FOUND', 'Content page not found', 404));
+    res.json(result.page);
+  }
+);
 
 api.get('/content/:id/layout', requireAuth, authorize(['admin', 'marketing']), validateParams(schemas.idParam), (req, res, next) => {
   const layout = pageLayoutService.getByPage(req.params.id, req.tenant.id);
@@ -592,6 +759,46 @@ api.post('/content/:id/layout/publish', requireAuth, authorize(['admin', 'market
   const result = pageLayoutService.publish(req.params.id, req.tenant.id);
   if (result.notFound) return next(new AppError('NOT_FOUND', 'Layout not found for content page', 404));
   res.json(result.layout);
+});
+
+api.get('/block-presets', requireAuth, authorize(['admin', 'marketing']), (req, res) => {
+  res.json({ presets: blockPresetService.list(req.query, req.tenant.id) });
+});
+
+api.post(
+  '/block-presets',
+  requireAuth,
+  authorize(['admin', 'marketing']),
+  validateBody(schemas.blockPresetCreate),
+  (req, res, next) => {
+    const result = blockPresetService.create(req.validated.body, req.tenant.id, req.user?.email || req.user?.id);
+    if (result.error) return next(new AppError('VALIDATION_ERROR', result.error, 400));
+    res.status(201).json(result.preset);
+  }
+);
+
+api.patch(
+  '/block-presets/:id',
+  requireAuth,
+  authorize(['admin', 'marketing']),
+  validateParams(schemas.idParam),
+  validateBody(schemas.blockPresetUpdate),
+  (req, res, next) => {
+    const result = blockPresetService.update(
+      req.params.id,
+      req.validated.body,
+      req.tenant.id,
+      req.user?.email || req.user?.id
+    );
+    if (result.notFound) return next(new AppError('NOT_FOUND', 'Block preset not found', 404));
+    res.json(result.preset);
+  }
+);
+
+api.delete('/block-presets/:id', requireAuth, authorize(['admin', 'marketing']), validateParams(schemas.idParam), (req, res, next) => {
+  const result = blockPresetService.remove(req.params.id, req.tenant.id);
+  if (result.notFound) return next(new AppError('NOT_FOUND', 'Block preset not found', 404));
+  res.status(204).send();
 });
 
 api.patch('/inventory/:id/feature', requireAuth, authorize(['admin', 'sales']), (req, res, next) => {
@@ -622,6 +829,10 @@ api.post('/seo/profiles', requireAuth, authorize(['admin', 'marketing']), valida
 api.post('/seo/autofill', requireAuth, authorize(['admin', 'marketing']), (req, res) => {
   const result = seoService.autofillMissing(req.tenant.id);
   res.json(result);
+});
+
+api.get('/seo/health', requireAuth, authorize(['admin', 'marketing']), (req, res) => {
+  res.json(seoService.seoHealth(req.tenant.id));
 });
 
 api.get('/leads', requireAuth, authorize(['admin', 'sales', 'marketing']), validateQuery(schemas.leadListQuery), (req, res) => {
@@ -812,6 +1023,21 @@ api.put('/settings', requireAuth, authorize(['admin']), (req, res) => {
   res.json(result.settings);
 });
 
+api.get('/settings/badge-rules', requireAuth, authorize(['admin', 'marketing']), (req, res) => {
+  res.json({ badgeRules: settingsService.getBadgeRules(req.tenant.id) });
+});
+
+api.patch(
+  '/settings/badge-rules',
+  requireAuth,
+  authorize(['admin', 'marketing']),
+  validateBody(schemas.badgeRulesUpdate),
+  (req, res) => {
+    const result = settingsService.updateBadgeRules(req.validated.body, req.tenant.id);
+    res.json(result.badgeRules);
+  }
+);
+
 api.get('/health', (req, res) => {
   const writable = checkDataDirWritable();
   const status = writable ? 'ok' : 'degraded';
@@ -829,12 +1055,32 @@ api.get('/health', (req, res) => {
 
 api.get('/sitemap', (req, res) => {
   const tenantId = req.tenant.id;
-  const inventory = inventoryService.list({}, tenantId).items.map(item => ({
-    type: 'inventory',
-    slug: item.slug,
-    id: item.id
-  }));
-  const pages = contentPageService.list({}, tenantId).map(page => ({ type: 'content', slug: page.slug, id: page.id }));
+  const profiles = seoService.list({}, tenantId);
+  const profileFor = (resourceType, id) => profiles.find(p => p.resourceType === resourceType && p.resourceId === id);
+  const inventory = inventoryService.list({}, tenantId).items.map(item => {
+    const profile = profileFor('inventory', item.id);
+    const slug = item.slug || item.id;
+    return {
+      type: 'inventory',
+      slug,
+      id: item.id,
+      canonicalUrl: profile?.canonicalUrl || `/inventory/${slug}`,
+      lastmod: item.updatedAt || item.createdAt,
+      priority: 0.8
+    };
+  });
+  const pages = contentPageService.list({ status: 'published' }, tenantId).map(page => {
+    const profile = profileFor('content', page.id);
+    const slug = page.slug || page.id;
+    return {
+      type: 'content',
+      slug,
+      id: page.id,
+      canonicalUrl: profile?.canonicalUrl || `/pages/${slug}`,
+      lastmod: page.updatedAt || page.createdAt,
+      priority: 0.6
+    };
+  });
   res.json({
     tenantId,
     generatedAt: new Date().toISOString(),
@@ -845,6 +1091,42 @@ api.get('/sitemap', (req, res) => {
 api.post('/analytics/events', validateBody(schemas.analyticsEvent), (req, res) => {
   const result = analyticsService.recordEvent(req.validated.body, req.validated.body.tenantId || req.tenant.id);
   res.status(201).json(result.event);
+});
+
+api.post(
+  '/experiments',
+  requireAuth,
+  authorize(['admin', 'marketing']),
+  validateBody(schemas.experimentCreate),
+  (req, res, next) => {
+    const result = experimentService.create(req.validated.body, req.tenant.id, req.user?.email || req.user?.id);
+    if (result.error) return next(new AppError('VALIDATION_ERROR', result.error, 400));
+    res.status(201).json(result.experiment);
+  }
+);
+
+api.patch(
+  '/experiments/:id',
+  requireAuth,
+  authorize(['admin', 'marketing']),
+  validateParams(schemas.idParam),
+  validateBody(schemas.experimentUpdate),
+  (req, res, next) => {
+    const result = experimentService.update(
+      req.params.id,
+      req.validated.body,
+      req.tenant.id,
+      req.user?.email || req.user?.id
+    );
+    if (result.notFound) return next(new AppError('NOT_FOUND', 'Experiment not found', 404));
+    res.json(result.experiment);
+  }
+);
+
+api.get('/experiments/:id', requireAuth, authorize(['admin', 'marketing']), validateParams(schemas.idParam), (req, res, next) => {
+  const result = experimentService.getById(req.params.id, req.tenant.id);
+  if (result.notFound) return next(new AppError('NOT_FOUND', 'Experiment not found', 404));
+  res.json(result);
 });
 
 api.get('/analytics/dashboard', requireAuth, authorize(['admin', 'marketing']), (req, res) => {
@@ -902,6 +1184,22 @@ api.put('/webhooks/:id', requireAuth, authorize(['admin', 'marketing']), validat
 api.delete('/webhooks/:id', requireAuth, authorize(['admin', 'marketing']), (req, res, next) => {
   const result = webhookService.remove(req.params.id, req.tenant.id);
   if (result.notFound) return next(new AppError('NOT_FOUND', 'Webhook not found', 404));
+  res.status(204).send();
+});
+
+api.get('/redirects', requireAuth, authorize(['admin', 'marketing']), (req, res) => {
+  res.json(redirectService.list(req.tenant.id));
+});
+
+api.post('/redirects', requireAuth, authorize(['admin', 'marketing']), validateBody(schemas.redirectCreate), (req, res, next) => {
+  const result = redirectService.create(req.validated.body, req.validated.body.tenantId || req.tenant.id);
+  if (result.error) return next(new AppError('VALIDATION_ERROR', result.error, 400));
+  res.status(201).json(result.redirect);
+});
+
+api.delete('/redirects/:id', requireAuth, authorize(['admin', 'marketing']), (req, res, next) => {
+  const result = redirectService.remove(req.params.id, req.tenant.id);
+  if (result.notFound) return next(new AppError('NOT_FOUND', 'Redirect not found', 404));
   res.status(204).send();
 });
 

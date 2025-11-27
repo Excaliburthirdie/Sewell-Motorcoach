@@ -161,6 +161,36 @@ const inventoryBulkImport = z.object({
   csv: z.string().trim().min(1),
   tenantId: z.string().trim().min(1).optional()
 });
+const badgeRule = z.object({
+  label: z.string().trim(),
+  matchField: z.string().trim(),
+  matchValue: z.union([z.string(), z.number()])
+});
+const badgeRulesUpdate = z.object({
+  nationalParkMaxLength: z.union([z.number(), z.string()]).optional(),
+  offGridEnabled: z.boolean().optional(),
+  customRules: z.array(badgeRule).optional()
+});
+const badgePreview = inventoryBase.partial();
+
+const spotlightTemplateCreate = z.object({
+  name: z.string().trim(),
+  description: z.string().trim().optional(),
+  spotlights: z.array(spotlight)
+});
+const spotlightTemplateUpdate = spotlightTemplateCreate.partial();
+const spotlightTemplateApply = z.object({
+  templateId: z.string().trim(),
+  inventoryIds: z.array(z.string().trim())
+});
+const badgeRecompute = z
+  .object({
+    inventoryIds: z.array(z.string().trim()).optional(),
+    all: z.boolean().optional()
+  })
+  .refine(body => body.all || (body.inventoryIds && body.inventoryIds.length > 0), {
+    message: 'Provide inventoryIds or set all to true'
+  });
 
 const teamMember = z.object({
   firstName: z.string().trim(),
@@ -274,10 +304,16 @@ const contentPageCreate = z.object({
   body: z.string().trim(),
   slug: z.string().trim().optional(),
   metaTitle: z.string().trim().optional(),
-  metaDescription: z.string().trim().optional()
+  metaDescription: z.string().trim().optional(),
+  status: z.enum(['draft', 'scheduled', 'published']).optional(),
+  publishAt: z.string().trim().optional()
 });
 
 const contentPageUpdate = contentPageCreate.partial();
+
+const pagePublish = z.object({
+  publishAt: z.string().trim().optional()
+});
 
 const eventCreate = z.object({
   type: z.enum(['search', 'view', 'lead_submit']),
@@ -339,6 +375,8 @@ const analyticsEvent = z.object({
   channel: z.string().trim().optional(),
   note: z.string().trim().optional(),
   metrics: z.any().optional(),
+  experimentId: z.string().trim().optional(),
+  variantId: z.string().trim().optional(),
   tenantId: z.string().trim().min(1).optional()
 });
 
@@ -350,6 +388,32 @@ const pageLayoutUpsert = z.object({
   widgets: z.array(z.any()).optional(),
   tenantId: z.string().trim().min(1).optional()
 });
+
+const blockPresetCreate = z.object({
+  type: z.string().trim(),
+  label: z.string().trim(),
+  props: z.any().optional()
+});
+
+const blockPresetUpdate = blockPresetCreate.partial();
+
+const experimentVariant = z.object({
+  id: z.string().trim().optional(),
+  weight: z.union([z.number(), z.string()]).optional(),
+  pageIdOrBlockConfig: z.any().optional(),
+  label: z.string().trim().optional()
+});
+
+const experimentCreate = z.object({
+  name: z.string().trim(),
+  targetSlug: z.string().trim(),
+  variantType: z.enum(['page', 'block']),
+  status: z.enum(['draft', 'running', 'stopped']).optional(),
+  variants: z.array(experimentVariant),
+  metrics: z.array(z.string().trim()).optional()
+});
+
+const experimentUpdate = experimentCreate.partial();
 
 const aiProviderCreate = z.object({
   name: z.string().trim().optional(),
@@ -404,6 +468,18 @@ const webhookListQuery = z.object({
     })
 });
 
+const redirectCreate = z.object({
+  sourcePath: z.string().trim().min(1),
+  targetPath: z.string().trim().min(1),
+  statusCode: z
+    .union([z.number(), z.string()])
+    .optional()
+    .transform(val => (val === undefined ? undefined : Number(val)))
+    .refine(val => val === undefined || val === 301 || val === 302, { message: 'statusCode must be 301 or 302' }),
+  createdBy: z.string().trim().optional(),
+  tenantId: z.string().trim().min(1).optional()
+});
+
 const auditLogQuery = z.object({
   tenantId: z.string().trim().optional(),
   entity: z.string().trim().optional(),
@@ -423,6 +499,12 @@ module.exports = {
     inventorySpotlightsUpdate,
     inventoryHotspotsUpdate,
     inventoryMediaUpdate,
+    badgeRulesUpdate,
+    badgePreview,
+    spotlightTemplateCreate,
+    spotlightTemplateUpdate,
+    spotlightTemplateApply,
+    badgeRecompute,
     teamCreate,
     teamUpdate,
     reviewCreate,
@@ -444,6 +526,7 @@ module.exports = {
     settingsUpdate,
     contentPageCreate,
     contentPageUpdate,
+    pagePublish,
     eventCreate,
     idParam,
     inventoryId,
@@ -453,6 +536,10 @@ module.exports = {
     seoProfileUpsert,
     analyticsEvent,
     pageLayoutUpsert,
+    blockPresetCreate,
+    blockPresetUpdate,
+    experimentCreate,
+    experimentUpdate,
     aiProviderCreate,
     aiObservationCreate,
     aiWebFetchRequest,
@@ -460,7 +547,8 @@ module.exports = {
     webhookUpdate,
     webhookListQuery,
     webhookDeliveryQuery,
-    auditLogQuery
+    auditLogQuery,
+    redirectCreate
   },
   constants: {
     INVENTORY_CONDITIONS,
