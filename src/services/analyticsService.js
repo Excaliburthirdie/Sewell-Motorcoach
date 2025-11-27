@@ -11,7 +11,15 @@ function safe(payload) {
 }
 
 function recordEvent(payload, tenantId) {
-  const sanitized = sanitizePayloadStrings(payload, ['type', 'resourceType', 'resourceId', 'note', 'channel']);
+  const sanitized = sanitizePayloadStrings(payload, [
+    'type',
+    'resourceType',
+    'resourceId',
+    'note',
+    'channel',
+    'experimentId',
+    'variantId'
+  ]);
   const event = {
     id: randomUUID(),
     tenantId: normalizeTenantId(tenantId),
@@ -21,7 +29,9 @@ function recordEvent(payload, tenantId) {
     resourceId: sanitized.resourceId,
     channel: sanitized.channel,
     note: sanitized.note,
-    metrics: payload.metrics || {}
+    metrics: payload.metrics || {},
+    experimentId: sanitized.experimentId,
+    variantId: sanitized.variantId
   };
   datasets.analytics.events = datasets.analytics.events || [];
   datasets.analytics.events.push(event);

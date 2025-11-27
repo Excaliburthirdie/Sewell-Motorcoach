@@ -18,20 +18,23 @@ function hasOffGridSignals(unit) {
   return hasLithium || solar.length > 0 || inverter.length > 0;
 }
 
-function hasCompactLength(unit) {
+function hasCompactLength(unit, maxLength) {
   if (!unit.length) return false;
   const parsed = Number(unit.length);
-  return Number.isFinite(parsed) && parsed < 30;
+  return Number.isFinite(parsed) && parsed < maxLength;
 }
 
 function deriveBadges(unit, tenantSettings = {}) {
   const badges = new Set();
+  const badgeRules = tenantSettings.badgeRules || {};
+  const nationalParkMaxLength = Number(badgeRules.nationalParkMaxLength) || 30;
+  const offGridEnabled = badgeRules.offGridEnabled !== false;
 
-  if (hasOffGridSignals(unit)) {
+  if (offGridEnabled && hasOffGridSignals(unit)) {
     badges.add('Off-Grid Ready');
   }
 
-  if (hasCompactLength(unit)) {
+  if (hasCompactLength(unit, nationalParkMaxLength)) {
     badges.add('National Park Friendly');
   }
 
@@ -43,7 +46,7 @@ function deriveBadges(unit, tenantSettings = {}) {
     badges.add('Sleeps the Crew');
   }
 
-  const configuredBadges = tenantSettings.badgeConfig || [];
+  const configuredBadges = badgeRules.customRules || tenantSettings.badgeConfig || [];
   configuredBadges
     .filter(entry => entry && entry.matchField && entry.label)
     .forEach(entry => {

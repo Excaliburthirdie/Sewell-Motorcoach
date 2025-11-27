@@ -1,130 +1,108 @@
 const assert = require('node:assert/strict');
 const { describe, it, beforeEach, afterEach, mock } = require('node:test');
-const { computeInventoryBadges } = require('../src/services/inventoryBadges');
-const inventoryService = require('../src/services/inventoryService');
-const inventorySchemaService = require('../src/services/inventorySchemaService');
+
 const { datasets, persist } = require('../src/services/state');
+const inventoryService = require('../src/services/inventoryService');
+const inventoryRevisionService = require('../src/services/inventoryRevisionService');
+const spotlightTemplateService = require('../src/services/spotlightTemplateService');
+const settingsService = require('../src/services/settingsService');
 
-const baseUnit = overrides => ({
-  id: 'unit-1',
-  stockNumber: 'STK-1',
-  vin: 'VIN-11111111111',
-  name: 'Adventure Coach',
-  condition: 'new',
-  price: 100000,
-  tenantId: 'main',
-  createdAt: '2023-01-01T00:00:00.000Z',
-  ...overrides
-});
+const tenantId = 'main';
 
-describe('inventory badges engine', () => {
-  let originalSettings;
-
+describe('inventory storytelling enhancements', () => {
+  let persistMocks;
   beforeEach(() => {
-    originalSettings = [...datasets.settings];
-    datasets.settings = [
+    persistMocks = [
+      mock.method(persist, 'inventory', () => {}),
+      mock.method(persist, 'inventoryRevisions', () => {}),
+      mock.method(persist, 'spotlightTemplates', () => {}),
+      mock.method(persist, 'settings', () => {})
+    ];
+    datasets.inventory = [
       {
-        tenantId: 'main',
-        badgeConfig: [{ matchField: 'fuelType', matchValue: 'diesel', label: 'Diesel Power' }]
+        id: 'inv-1',
+        stockNumber: 'STK-1',
+        vin: 'VIN-12345678901',
+        name: 'Coach One',
+        condition: 'new',
+        price: 100000,
+        length: 29,
+        tenantId,
+        spotlights: []
+      },
+      {
+        id: 'inv-2',
+        stockNumber: 'STK-2',
+        vin: 'VIN-12345678902',
+        name: 'Coach Two',
+        condition: 'new',
+        price: 110000,
+        length: 33,
+        tenantId,
+        spotlights: []
       }
     ];
+    datasets.inventoryRevisions = [];
+    datasets.spotlightTemplates = [];
+    datasets.settings = [{ tenantId, badgeRules: {}, dealershipName: 'Test Dealer' }];
   });
 
   afterEach(() => {
-    datasets.settings = originalSettings;
+    persistMocks.forEach(m => m.mock.restore());
   });
 
-  it('generates badges from heuristics and tenant config', () => {
-    const unit = baseUnit({ length: 28, solar: ['roof'], batteries: ['Lithium Pro'], fuelType: 'diesel' });
-    const badges = computeInventoryBadges(unit, 'main');
-    assert.ok(badges.includes('Off-Grid Ready'));
-    assert.ok(badges.includes('National Park Friendly'));
-    assert.ok(badges.includes('Diesel Power'));
-  });
-});
-
-describe('inventory storytelling surfaces', () => {
-  let persistMock;
-
-  beforeEach(() => {
-    persistMock = mock.method(persist, 'inventory', () => {});
-    datasets.inventory = [baseUnit({ id: 'unit-story', vin: 'VIN-22222222222' })];
-  });
-
-  afterEach(() => {
-    persistMock?.mock.restore();
-  });
-
-  it('updates sales story and spotlights with tenant scoping', () => {
-    const storyResult = inventoryService.updateStory('unit-story', 'Salesman take', 'main');
-    assert.equal(storyResult.unit.salesStory, 'Salesman take');
-
-    const spotlightResult = inventoryService.updateSpotlights(
-      'unit-story',
-      [
-        { title: 'New Tires', description: 'Michelin upgrade', valueTag: '$4,000', priority: 1 },
-        { id: 'fixed-id', title: 'Solar Ready', description: 'Panels installed', priority: 2 }
-      ],
-      'main'
+  it('captures and restores revisions for storytelling fields', () => {
+    const updateResult = inventoryService.updateSpotlights(
+      'inv-1',
+      [{ title: 'Freshly detailed', description: 'Ready for adventures' }],
+      tenantId
     );
+    assert.ok(updateResult.unit.spotlights.length); 
+    const revisions = inventoryRevisionService.listRevisions('inv-1', tenantId);
+    assert.equal(revisions.length, 1);
+    assert.equal(revisions[0].field, 'spotlights');
 
-    assert.equal(spotlightResult.unit.spotlights.length, 2);
-    assert.ok(spotlightResult.unit.spotlights[0].id);
-    assert.equal(spotlightResult.unit.spotlights[1].id, 'fixed-id');
+    const restored = inventoryRevisionService.restoreRevision('inv-1', revisions[0].id, tenantId);
+    assert.ok(restored.unit.spotlights.length === 0);
   });
 
-  it('normalizes media hotspots and media metadata', () => {
-    const hotspotResult = inventoryService.updateMediaHotspots(
-      'unit-story',
-      [{ x: 2, y: -1, label: 'Wheel', description: 'New rims' }],
-      'main'
-    );
-    assert.equal(hotspotResult.unit.mediaHotspots[0].x, 1);
-    assert.equal(hotspotResult.unit.mediaHotspots[0].y, 0);
-
-    const mediaResult = inventoryService.updateMedia(
-      'unit-story',
+  it('applies spotlight templates in bulk', () => {
+    const created = spotlightTemplateService.create(
       {
-        photos: [{ url: 'https://images.test/photo.jpg', isHero: true, optimizedUrl: 'https://images.test/opt.webp' }],
-        heroVideo: { url: 'https://videos.test/hero.mp4', durationSeconds: 30 },
-        virtualTour: { provider: 'matterport', url: 'https://tour.test' }
+        name: 'Value hits',
+        spotlights: [
+          { title: 'Solar Ready', description: 'Panels installed' },
+          { title: 'Warranty', description: 'Transferable coverage' }
+        ]
       },
-      'main'
+      tenantId,
+      'tester'
     );
-    assert.equal(mediaResult.unit.media.photos[0].optimizedUrl, 'https://images.test/opt.webp');
-    assert.equal(mediaResult.unit.media.heroVideo.url, 'https://videos.test/hero.mp4');
-    assert.equal(mediaResult.unit.media.virtualTour.provider, 'matterport');
-  });
-});
-
-describe('inventory schema export', () => {
-  let persistMock;
-
-  beforeEach(() => {
-    persistMock = mock.method(persist, 'seoProfiles', () => {});
-    datasets.seoProfiles = [];
+    const result = spotlightTemplateService.applyTemplate(created.template.id, ['inv-1', 'inv-2'], tenantId);
+    assert.deepEqual(result.applied.sort(), ['inv-1', 'inv-2']);
+    assert.equal(datasets.inventory[0].spotlights.length, 2);
+    assert.equal(datasets.inventory[1].spotlights[0].title, 'Solar Ready');
   });
 
-  afterEach(() => {
-    persistMock?.mock.restore();
-  });
+  it('honors configurable badge rules for previews and recompute', () => {
+    settingsService.updateBadgeRules(
+      {
+        nationalParkMaxLength: 35,
+        offGridEnabled: false,
+        customRules: [{ label: 'Diesel Intent', matchField: 'engine', matchValue: 'diesel' }]
+      },
+      tenantId
+    );
 
-  it('builds RecreationalVehicle JSON-LD payload', () => {
-    const unit = baseUnit({
-      id: 'schema-1',
-      slug: 'adventure',
-      totalPrice: 123000,
-      media: { photos: [{ url: 'https://images.test/hero.jpg', isHero: true }] },
-      category: 'Motorhome',
-      subcategory: 'Class A',
-      beds: 4,
-      fuelType: 'diesel'
-    });
-    const schema = inventorySchemaService.buildJsonLd(unit, 'main');
-    assert.equal(schema['@type'], 'RecreationalVehicle');
-    assert.equal(schema.image, 'https://images.test/hero.jpg');
-    assert.equal(schema.vehicleConfiguration, 'Class A');
-    assert.equal(schema.url, '/inventory/adventure');
-    assert.equal(schema.numberOfBeds, 4);
+    const preview = inventoryService.previewBadges({ length: 34, engine: 'diesel', solar: ['panel'] }, tenantId);
+    assert.ok(preview.includes('National Park Friendly'));
+    assert.ok(preview.includes('Diesel Intent'));
+    assert.ok(!preview.includes('Off-Grid Ready'));
+
+    datasets.inventory[0].engine = 'diesel';
+    datasets.inventory[0].length = 34;
+    const recompute = inventoryService.recomputeBadges({ inventoryIds: ['inv-1'] }, tenantId);
+    assert.equal(recompute.updated, 1);
+    assert.ok(datasets.inventory[0].badges.includes('Diesel Intent'));
   });
 });

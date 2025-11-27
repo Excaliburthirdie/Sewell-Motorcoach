@@ -15,7 +15,8 @@ MongoDB) by replacing the helper functions in `index.js`.
 The API is built to mirror a dealership-grade control center. Every resource is scoped to a tenant (location) and guarded by
 JWT-based auth with optional legacy API key support. Highlights include:
 
-- **Inventory management** – full CRUD, featured toggling, slug lookups, stats rollups, CSV import and pricing change audits.
+- **Inventory management** – full CRUD, featured toggling, slug lookups, stats rollups, CSV import and pricing change audits with
+  revision history for storytelling fields and badge previews.
 - **Team (staff) management** – teams with members, roles and biographies plus CRUD for marketing/admin roles.
 - **Customer reviews** – collect, publish and moderate reviews with ratings and visibility flags.
 - **Lead collection** – unauthenticated lead intake with status updates, assignments and webhook notifications.
@@ -183,20 +184,38 @@ A step-by-step import guide (CSV layout, authentication flow, and troubleshootin
 |   GET  | `/inventory/stats`                 | Aggregate inventory stats per tenant                           |
 |   GET  | `/inventory/:id`                   | Retrieve a single unit by ID                                   |
 |   GET  | `/inventory/slug/:slug`            | Retrieve a single unit by slug                                 |
+|   GET  | `/inventory/:id/revisions`         | List revision history for storytelling fields                  |
+|  POST  | `/inventory/:id/revisions/:revisionId/restore` | Restore a prior storytelling revision (admin)          |
 |   POST | `/inventory`                       | Create a new unit (admin/sales)                                |
+|   POST | `/inventory/badges/preview`        | Compute badges for a draft payload (admin/sales/marketing)     |
+|   POST | `/inventory/bulk/spotlights/apply-template` | Apply a saved spotlight template to units (admin/marketing) |
+|   POST | `/inventory/bulk/recompute-badges` | Recompute badges for select or all units (admin/marketing)     |
 |   POST | `/inventory/import`                | Bulk import inventory from CSV (admin/sales)                   |
 |   PUT  | `/inventory/:id`                   | Update an existing unit (admin/sales)                          |
 |  PATCH | `/inventory/:id/feature`           | Toggle featured flag (admin/sales)                             |
 | DELETE | `/inventory/:id`                   | Delete a unit (admin)                                          |
+|   GET  | `/spotlight-templates`             | List spotlight templates (admin/marketing)                     |
+|   POST | `/spotlight-templates`             | Create a spotlight template (admin/marketing)                  |
+|  PATCH | `/spotlight-templates/:id`         | Update a spotlight template (admin/marketing)                  |
+| DELETE | `/spotlight-templates/:id`         | Delete a spotlight template (admin/marketing)                  |
 |   GET  | `/content`                         | List content pages                                             |
 |   GET  | `/content/:id`                     | Retrieve a content page by ID                                  |
 |   GET  | `/content/slug/:slug`              | Retrieve a content page by slug                                |
+|   GET  | `/pages/:slug?mode=preview`        | Retrieve published pages or draft preview when authenticated   |
 |   POST | `/content`                         | Create a content page (admin/marketing)                        |
 |   PUT  | `/content/:id`                     | Update a content page (admin/marketing)                        |
 | DELETE | `/content/:id`                     | Delete a content page (admin/marketing)                        |
+|   POST | `/pages/:id/publish`               | Publish immediately or schedule a content page (admin/marketing) |
 |   GET  | `/content/:id/layout`              | Retrieve layout draft/published blocks (admin/marketing)       |
 |   POST | `/content/:id/layout`              | Save a layout draft (admin/marketing)                          |
 |   POST | `/content/:id/layout/publish`      | Publish a saved layout draft (admin/marketing)                 |
+|   GET  | `/block-presets`                   | List reusable block presets (admin/marketing)                  |
+|   POST | `/block-presets`                   | Create a block preset (admin/marketing)                        |
+|  PATCH | `/block-presets/:id`               | Update a block preset (admin/marketing)                        |
+| DELETE | `/block-presets/:id`               | Delete a block preset (admin/marketing)                        |
+|   POST | `/experiments`                     | Create an A/B experiment (admin/marketing)                     |
+|  PATCH | `/experiments/:id`                 | Update an A/B experiment (admin/marketing)                     |
+|   GET  | `/experiments/:id`                 | Retrieve experiment config and metrics (admin/marketing)       |
 |   GET  | `/seo/profiles`                    | List SEO profiles for a resource (admin/marketing)             |
 |   POST | `/seo/profiles`                    | Upsert a SEO profile (admin/marketing)                         |
 |   POST | `/seo/autofill`                    | Auto-create missing SEO profiles (admin/marketing)             |
@@ -232,6 +251,7 @@ A step-by-step import guide (CSV layout, authentication flow, and troubleshootin
 |   GET  | `/settings`                        | Retrieve dealership settings (admin)                           |
 |   PUT  | `/settings`                        | Update dealership settings (admin)                             |
 |   GET  | `/sitemap`                         | Generate a sitemap of inventory and content pages              |
+|   GET  | `/seo/health`                      | Tenant SEO diagnostics (admin/marketing)                       |
 |   GET  | `/analytics/dashboard`             | Tenant analytics dashboard (admin/marketing)                   |
 |   POST | `/analytics/events`                | Record analytics events                                        |
 |   POST | `/events`                          | Record operational events that feed rollups                    |
@@ -241,6 +261,9 @@ A step-by-step import guide (CSV layout, authentication flow, and troubleshootin
 |   GET  | `/ai/suggestions`                  | Retrieve AI suggestions (admin/marketing/sales)                |
 |   POST | `/ai/web-fetch`                    | Run a remote web fetch (admin/marketing)                       |
 |   GET  | `/ai/web-fetch`                    | List past web fetches (admin/marketing)                        |
+|   GET  | `/redirects`                       | List redirect rules (admin/marketing)                          |
+|   POST | `/redirects`                       | Create a redirect rule (admin/marketing)                       |
+| DELETE | `/redirects/:id`                   | Delete a redirect (admin/marketing)                            |
 |   GET  | `/webhooks`                        | List webhooks (admin/marketing)                                |
 |   GET  | `/webhooks/deliveries`             | List webhook deliveries (admin/marketing)                      |
 |   POST | `/webhooks`                        | Create a webhook (admin/marketing)                             |

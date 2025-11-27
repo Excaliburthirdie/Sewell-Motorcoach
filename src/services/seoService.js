@@ -165,6 +165,79 @@ function autofillMissing(tenantId) {
   return { generated: generated.map(safe) };
 }
 
+function seoHealth(tenantId) {
+  const tenant = normalizeTenantId(tenantId);
+  const inventoryItems = inventoryService.list({}, tenant).items || [];
+  const contentPages = contentPageService.list({}, tenant) || [];
+  const profiles = list({}, tenant);
+
+  const profileFor = (resourceType, id) => profiles.find(p => p.resourceType === resourceType && p.resourceId === id);
+
+  const unitsMissingSeoTitle = inventoryItems.filter(item => {
+    const profile = profileFor('inventory', item.id);
+    return !(item.metaTitle || profile?.metaTitle);
+  }).length;
+
+  const unitsMissingMetaDescription = inventoryItems.filter(item => {
+    const profile = profileFor('inventory', item.id);
+    return !(item.metaDescription || profile?.metaDescription);
+  }).length;
+
+  const pageTitles = contentPages.map(page => {
+    const profile = profileFor('content', page.id);
+    return (profile && profile.metaTitle) || page.metaTitle || page.title || '';
+  });
+  const pageDescriptions = contentPages.map(page => {
+    const profile = profileFor('content', page.id);
+    return (profile && profile.metaDescription) || page.metaDescription || '';
+  });
+
+  const duplicateCounts = list => {
+    const counts = new Map();
+    list
+      .map(entry => entry.trim())
+      .filter(Boolean)
+      .forEach(value => counts.set(value, (counts.get(value) || 0) + 1));
+    return Array.from(counts.values()).filter(count => count > 1).length;
+  };
+
+  const pagesWithDuplicateTitles = duplicateCounts(pageTitles);
+  const pagesWithDuplicateDescriptions = duplicateCounts(pageDescriptions);
+
+  const schemaValidationErrors = profiles.filter(profile => {
+    if (!profile.schemaMarkup) return false;
+    if (typeof profile.schemaMarkup === 'object') return false;
+    if (typeof profile.schemaMarkup === 'string') {
+      try {
+        JSON.parse(profile.schemaMarkup);
+        return false;
+      } catch (err) {
+        return true;
+      }
+    }
+    return true;
+  }).length;
+
+  return {
+    tenantId: tenant,
+    generatedAt: new Date().toISOString(),
+    status: 'ok',
+    metrics: {
+      unitsMissingSeoTitle: { value: unitsMissingSeoTitle, severity: unitsMissingSeoTitle ? 'warning' : 'ok' },
+      unitsMissingMetaDescription: {
+        value: unitsMissingMetaDescription,
+        severity: unitsMissingMetaDescription ? 'warning' : 'ok'
+      },
+      pagesWithDuplicateTitles: { value: pagesWithDuplicateTitles, severity: pagesWithDuplicateTitles ? 'warning' : 'ok' },
+      pagesWithDuplicateDescriptions: {
+        value: pagesWithDuplicateDescriptions,
+        severity: pagesWithDuplicateDescriptions ? 'warning' : 'ok'
+      },
+      schemaValidationErrors: { value: schemaValidationErrors, severity: schemaValidationErrors ? 'error' : 'ok' }
+    }
+  };
+}
+
 module.exports = {
   list,
   find,
@@ -172,5 +245,6 @@ module.exports = {
   autofillMissing,
   generateInventoryProfile,
   generateContentProfile,
-  ensureInventoryProfile
+  ensureInventoryProfile,
+  seoHealth
 };
