@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sewell Motorcoach | Performance Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/dashboard.css" />
+</head>
+<body>
+  <div class="page">
+    <header class="top-bar">
+      <div class="brand">
+        <div class="brand-mark">SM</div>
+        <div class="brand-copy">
+          <p class="eyebrow">Sewell Motorcoach</p>
+          <h1>Command Dashboard</h1>
+        </div>
+      </div>
+      <div class="top-actions">
+        <button class="ghost">View API Docs</button>
+        <button class="primary">Export Snapshot</button>
+      </div>
+    </header>
+
+    <section class="hero">
+      <div>
+        <p class="eyebrow">Performance Pulse</p>
+        <h2>Beautiful, living insights for every dealership location.</h2>
+        <p class="lede">See inventory strength, conversion velocity, and guest delight in one high-fidelity view. Powered directly by the live API.</p>
+        <div class="hero-actions">
+          <button class="primary">Launch Experience</button>
+          <button class="ghost">Switch Tenant</button>
+        </div>
+      </div>
+      <div class="hero-meter">
+        <div class="meter-ring">
+          <div class="meter-ring__glow"></div>
+          <div class="meter-score" id="experience-score">98</div>
+          <p class="meter-label">Experience Index</p>
+        </div>
+        <div class="meter-caption">
+          <p>Blended score from inventory freshness, NPS, and SLA response times.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="grid">
+      <div class="card kpi-card">
+        <div class="card-header">
+          <p class="eyebrow">Momentum KPIs</p>
+          <span class="pill success">Live</span>
+        </div>
+        <div class="kpis" id="kpi-list">
+          <!-- populated by dashboard.js -->
+        </div>
+      </div>
+
+      <div class="card chart-card">
+        <div class="card-header">
+          <div>
+            <p class="eyebrow">Inventory Mix</p>
+            <h3>Condition + Pricing</h3>
+          </div>
+          <span class="pill neutral" id="avg-price">$0</span>
+        </div>
+        <div class="chart" id="condition-chart"></div>
+        <div class="chart-legend" id="chart-legend"></div>
+      </div>
+
+      <div class="card table-card">
+        <div class="card-header">
+          <div>
+            <p class="eyebrow">Featured Inventory</p>
+            <h3>Prime units ready to move</h3>
+          </div>
+          <button class="ghost" id="refresh-inventory">Refresh</button>
+        </div>
+        <div class="table" id="inventory-table">
+          <div class="table-row table-head">
+            <span>Stock</span>
+            <span>Model</span>
+            <span>Condition</span>
+            <span class="align-right">Price</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card activity-card">
+        <div class="card-header">
+          <div>
+            <p class="eyebrow">Engagement Stream</p>
+            <h3>Leads, reviews & service</h3>
+          </div>
+          <span class="pill accent" id="live-tenants">main</span>
+        </div>
+        <div class="activity" id="activity-feed"></div>
+      </div>
+    </section>
+  </div>
+
+  <footer class="page-footer">
+    <div>
+      <p class="eyebrow">Quality Signals</p>
+      <p class="footer-copy">Pro-grade visual system, glass morphic surfaces, and delightful motion to make operating the dealership feel premium.</p>
+    </div>
+    <div class="footer-actions">
+      <button class="ghost">Performance Report</button>
+      <button class="primary">Share Live Dashboard</button>
+    </div>
+  </footer>
+  <script src="/dashboard.js"></script>
+</body>
+</html>

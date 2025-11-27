@@ -85,6 +85,7 @@ function parseCookies(req, _res, next) {
 app.use(bodyParser.json());
 app.use(parseCookies);
 app.use(cors({ origin: true, credentials: true }));
+app.use(express.static(path.join(__dirname, 'public')));
 
 // Input sanitization
 app.use((req, res, next) => {
@@ -554,6 +555,10 @@ api.get('/metrics', (req, res) => {
     routePerformance,
     rollup
   });
+});
+
+app.get(['/', '/dashboard'], (_req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
 });
 
 app.use('/v1', api);
