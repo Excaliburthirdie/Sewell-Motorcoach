@@ -5,15 +5,8 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "dev": "nodemon index.js",
+    "dev": "node index.js",
     "backfill:inventory": "node scripts/backfillInventory.js",
     "test": "node --test"
-  },
-  "dependencies": {
-    "express": "^4.18.2",
-    "cors": "^2.8.5"
-  },
-  "devDependencies": {
-    "nodemon": "^2.0.22"
   }
 }

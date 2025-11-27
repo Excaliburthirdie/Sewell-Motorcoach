@@ -1,5 +1,5 @@
-const express = require('express');
-const cors = require('cors');
+const express = require('./src/lib/miniExpress');
+const cors = require('./src/lib/cors');
 const fs = require('fs');
 const path = require('path');
 const { randomUUID } = require('node:crypto');
