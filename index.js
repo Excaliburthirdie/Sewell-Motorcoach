@@ -1,9 +1,9 @@
-const express = require('express');
-const bodyParser = require('body-parser');
-const cors = require('cors');
+const express = require('./src/lib/miniExpress');
+const cors = require('./src/lib/cors');
 const fs = require('fs');
 const path = require('path');
 const { randomUUID } = require('node:crypto');
+const zlib = require('node:zlib');
 
 const config = require('./src/config');
 const { DATA_DIR } = require('./src/persistence/store');
@@ -28,6 +28,7 @@ const { maskSensitiveFields } = require('./src/services/security');
 tenantService.initializeTenants();
 
 const app = express();
+app.disable('x-powered-by');
 app.set('trust proxy', 1);
 const port = config.server.port;
 const API_KEY = config.auth.apiKey;
@@ -48,6 +49,8 @@ const REFRESH_COOKIE_OPTIONS = {
 const rateLimitBuckets = new Map();
 const loginAttempts = new Map();
 const routeMetrics = new Map();
+const RATE_LIMIT_CLEANUP_MS = RATE_LIMIT_WINDOW_MS * 2;
+const LOGIN_ATTEMPT_TTL_MS = 10 * 60 * 1000;
 
 function recordLoginAttempt(ip, success) {
   if (success) {
@@ -82,7 +85,89 @@ function parseCookies(req, _res, next) {
   next();
 }
 
-app.use(bodyParser.json());
+function startInMemoryStateCleanup() {
+  const cleanup = () => {
+    const now = Date.now();
+    for (const [ip, timestamps] of rateLimitBuckets.entries()) {
+      const recent = timestamps.filter(timestamp => now - timestamp < RATE_LIMIT_WINDOW_MS);
+      if (recent.length === 0) {
+        rateLimitBuckets.delete(ip);
+      } else {
+        rateLimitBuckets.set(ip, recent);
+      }
+    }
+
+    for (const [ip, record] of loginAttempts.entries()) {
+      if (now - record.lastAttempt > LOGIN_ATTEMPT_TTL_MS) {
+        loginAttempts.delete(ip);
+      }
+    }
+  };
+
+  setInterval(cleanup, RATE_LIMIT_CLEANUP_MS).unref();
+  cleanup();
+}
+
+function applySecurityHeaders(_req, res, next) {
+  res.set({
+    'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'SAMEORIGIN',
+    'Referrer-Policy': 'strict-origin-when-cross-origin',
+    'X-DNS-Prefetch-Control': 'off',
+    'X-Permitted-Cross-Domain-Policies': 'none'
+  });
+  next();
+}
+
+function gzipResponses(req, res, next) {
+  const acceptEncoding = req.headers['accept-encoding'] || '';
+  if (!acceptEncoding.includes('gzip')) {
+    return next();
+  }
+
+  const originalSend = res.send.bind(res);
+  res.send = body => {
+    if (body === undefined || body === null) {
+      return originalSend(body);
+    }
+
+    let payload = body;
+    if (!Buffer.isBuffer(body)) {
+      if (typeof body === 'object') {
+        payload = Buffer.from(JSON.stringify(body));
+        if (!res.get('Content-Type')) {
+          res.type('application/json');
+        }
+      } else {
+        payload = Buffer.from(String(body));
+      }
+    }
+
+    zlib.gzip(payload, (err, compressed) => {
+      if (err) {
+        console.error('gzip failed', { message: err.message });
+        return originalSend(body);
+      }
+      res.set('Content-Encoding', 'gzip');
+      res.set('Vary', 'Accept-Encoding');
+      return originalSend(compressed);
+    });
+  };
+
+  next();
+}
+
+startInMemoryStateCleanup();
+if (config.server.compressionEnabled) {
+  app.use(gzipResponses);
+}
+app.use(applySecurityHeaders);
+app.use(
+  express.json({
+    limit: `${config.server.jsonLimitMb}mb`
+  })
+);
+app.use(express.urlencoded({ extended: true, limit: `${config.server.jsonLimitMb}mb` }));
 app.use(parseCookies);
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.static(path.join(__dirname, 'public')));
