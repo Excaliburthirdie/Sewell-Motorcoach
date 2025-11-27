@@ -16,20 +16,38 @@
         <div class="brand-mark">SM</div>
         <div class="brand-copy">
           <p class="eyebrow">Sewell Motorcoach</p>
-          <h1>Command Dashboard</h1>
+          <h1>Dealer Command</h1>
         </div>
       </div>
+      <nav class="nav">
+        <a class="nav-link active" href="#">Portal</a>
+        <a class="nav-link" href="#">Inventory</a>
+        <a class="nav-link" href="#">Leads</a>
+        <a class="nav-link" href="#">Marketing</a>
+        <a class="nav-link" href="#">Service</a>
+      </nav>
       <div class="top-actions">
         <button class="ghost">View API Docs</button>
         <button class="primary">Export Snapshot</button>
+        <div class="profile">
+          <div class="profile-indicator"></div>
+          <span>Concierge</span>
+        </div>
       </div>
     </header>
 
+    <section class="status-rail">
+      <div class="status-chip" id="tenant-pill">Tenant • main</div>
+      <div class="status-chip" id="inventory-pill">Units Live • 0</div>
+      <div class="status-chip" id="price-pill">Avg Ticket • $0</div>
+      <div class="status-chip" id="lead-pill">Leads Today • 0</div>
+    </section>
+
     <section class="hero">
       <div>
-        <p class="eyebrow">Performance Pulse</p>
-        <h2>Beautiful, living insights for every dealership location.</h2>
-        <p class="lede">See inventory strength, conversion velocity, and guest delight in one high-fidelity view. Powered directly by the live API.</p>
+        <div class="eyebrow duo">Signature Dealer Portal</div>
+        <h2>Boardroom-grade visibility for every rooftop, every moment.</h2>
+        <p class="lede">Curated for ownership teams, sales leadership, and concierge marketing partners. Every card is live and anchored to the production API so decisions feel effortless.</p>
         <div class="hero-actions">
           <button class="primary">Launch Experience</button>
           <button class="ghost">Switch Tenant</button>
@@ -43,19 +61,36 @@
         </div>
         <div class="meter-caption">
           <p>Blended score from inventory freshness, NPS, and SLA response times.</p>
+          <div class="mini-callouts" id="experience-notes"></div>
         </div>
       </div>
     </section>
 
-    <section class="grid">
+    <section class="grid premier-grid">
       <div class="card kpi-card">
         <div class="card-header">
-          <p class="eyebrow">Momentum KPIs</p>
+          <div>
+            <p class="eyebrow">Momentum KPIs</p>
+            <h3>North star signals for leadership</h3>
+          </div>
           <span class="pill success">Live</span>
         </div>
-        <div class="kpis" id="kpi-list">
-          <!-- populated by dashboard.js -->
+        <div class="kpis" id="kpi-list"></div>
+      </div>
+
+      <div class="card concierge-card">
+        <div class="card-header">
+          <div>
+            <p class="eyebrow">Concierge Tier</p>
+            <h3>White-glove operating rhythm</h3>
+          </div>
+          <span class="pill accent" id="live-tenants">main</span>
         </div>
+        <ul class="concierge-list" id="concierge-list">
+          <li>Executive-ready exports with audited numbers</li>
+          <li>Premium analytics for digital and on-lot performance</li>
+          <li>Concierge sync twice weekly with your revenue lead</li>
+        </ul>
       </div>
 
       <div class="card chart-card">
@@ -94,7 +129,7 @@
             <p class="eyebrow">Engagement Stream</p>
             <h3>Leads, reviews & service</h3>
           </div>
-          <span class="pill accent" id="live-tenants">main</span>
+          <button class="ghost small" id="download-feed">Download report</button>
         </div>
         <div class="activity" id="activity-feed"></div>
       </div>
@@ -104,7 +139,7 @@
   <footer class="page-footer">
     <div>
       <p class="eyebrow">Quality Signals</p>
-      <p class="footer-copy">Pro-grade visual system, glass morphic surfaces, and delightful motion to make operating the dealership feel premium.</p>
+      <p class="footer-copy">Pro-grade visual system, glass morphic surfaces, and concierge-ready motion make operating the dealership feel like a paid, premium portal.</p>
     </div>
     <div class="footer-actions">
       <button class="ghost">Performance Report</button>

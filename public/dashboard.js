@@ -57,6 +57,18 @@ function renderKpis(metrics, inventoryStats, rollupSummary) {
   kpis.forEach(kpi => kpiList.appendChild(createKpiCard(kpi.title, kpi.value, kpi.subtext, kpi.tone)));
 }
 
+function renderStatusRail(metrics, stats, rollupSummary) {
+  const tenantPill = document.getElementById('tenant-pill');
+  const inventoryPill = document.getElementById('inventory-pill');
+  const pricePill = document.getElementById('price-pill');
+  const leadPill = document.getElementById('lead-pill');
+
+  if (tenantPill) tenantPill.textContent = `Tenant • ${tenantId}`;
+  if (inventoryPill) inventoryPill.textContent = `Units Live • ${metrics?.counts?.inventory ?? 0}`;
+  if (pricePill) pricePill.textContent = `Avg Ticket • ${formatCurrency(stats?.averagePrice || 0)}`;
+  if (leadPill) leadPill.textContent = `Leads Today • ${rollupSummary?.leadsToday || 0}`;
+}
+
 function renderInventoryTable(items = []) {
   const container = document.getElementById('inventory-table');
   const header = document.createElement('div');
@@ -114,6 +126,54 @@ function renderConditionChart(byCondition = {}) {
     legendItem.className = 'legend-item';
     legendItem.innerHTML = `<span class="legend-swatch" style="background:${swatches[index % swatches.length]};"></span>${condition}`;
     legend.appendChild(legendItem);
+  });
+}
+
+function renderExperienceNotes(stats = {}, rollupSummary = {}) {
+  const container = document.getElementById('experience-notes');
+  if (!container) return;
+  container.innerHTML = '';
+
+  const notes = [
+    {
+      label: 'Price Confidence',
+      value: formatCurrency(stats.averagePrice || 0),
+      copy: 'Mean ticket across live stock'
+    },
+    {
+      label: 'Demand Pulse',
+      value: `${rollupSummary.eventsToday || 0} shopper events`,
+      copy: 'Digital intent captured today'
+    },
+    {
+      label: 'Delight',
+      value: `${rollupSummary.reviewsRecent || 0} reviews`,
+      copy: 'Fresh feedback inside 24h'
+    }
+  ];
+
+  notes.forEach(note => {
+    const card = document.createElement('div');
+    card.className = 'mini-callout';
+    card.innerHTML = `<p class="eyebrow">${note.label}</p><strong>${note.value}</strong><p class="subtext">${note.copy}</p>`;
+    container.appendChild(card);
+  });
+}
+
+function renderConciergeList(rollupSummary = {}) {
+  const list = document.getElementById('concierge-list');
+  if (!list) return;
+  list.innerHTML = '';
+  const items = [
+    `Executive exports locked at ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
+    `${rollupSummary.eventsToday || 0} engagement events with concierge QA applied`,
+    `${rollupSummary.leadsToday || 0} priority leads routed with SLA oversight`
+  ];
+
+  items.forEach(text => {
+    const li = document.createElement('li');
+    li.textContent = text;
+    list.appendChild(li);
   });
 }
 
@@ -195,11 +255,15 @@ async function loadDashboard() {
   };
 
   renderKpis(metrics, stats, rollupSummary);
+  renderStatusRail(metrics, stats, rollupSummary);
   renderConditionChart(stats.byCondition || {});
   document.getElementById('avg-price').textContent = formatCurrency(stats.averagePrice || 0);
   renderInventoryTable(inventory.items || inventory || []);
   renderActivityFeed(reviews.items || reviews || [], inventory.items || inventory || [], rollupSummary);
+  renderExperienceNotes(stats, rollupSummary);
+  renderConciergeList(rollupSummary);
 }
 
 document.getElementById('refresh-inventory').addEventListener('click', loadDashboard);
+document.getElementById('download-feed').addEventListener('click', () => window.print());
 loadDashboard();
