@@ -5,6 +5,7 @@ const { attachTenant, matchesTenant, normalizeTenantId } = require('./tenantServ
 const {
   constants: { INVENTORY_CONDITIONS, TRANSFER_STATUSES }
 } = require('../validation/schemas');
+const { computeInventoryBadges } = require('./inventoryBadges');
 
 const PRICING_FIELDS = ['price', 'msrp', 'salePrice', 'fees', 'taxes', 'rebates'];
 
@@ -49,8 +50,69 @@ function calculateTotalPrice(unit) {
   return Math.max(0, price + fees + taxes - rebates);
 }
 
-function safeUnit(unit) {
-  return escapeOutputPayload({ ...unit, totalPrice: calculateTotalPrice(unit) });
+function safeUnit(unit, tenantId) {
+  const badges = unit.badges && Array.isArray(unit.badges) && unit.badges.length
+    ? unit.badges
+    : computeInventoryBadges(unit, tenantId);
+  return escapeOutputPayload({ ...unit, badges, totalPrice: calculateTotalPrice(unit) });
+}
+
+function normalizeSpotlights(spotlights = []) {
+  if (!Array.isArray(spotlights)) return [];
+  return spotlights.map(entry => ({
+    id: entry.id || randomUUID(),
+    title: sanitizeString(entry.title),
+    description: sanitizeString(entry.description),
+    valueTag: sanitizeString(entry.valueTag),
+    priority: Number(entry.priority) || 0
+  }));
+}
+
+function normalizeMediaHotspots(hotspots = []) {
+  if (!Array.isArray(hotspots)) return [];
+  return hotspots.map(entry => ({
+    id: entry.id || randomUUID(),
+    mediaId: entry.mediaId || null,
+    x: Math.min(1, Math.max(0, Number(entry.x) || 0)),
+    y: Math.min(1, Math.max(0, Number(entry.y) || 0)),
+    label: sanitizeString(entry.label),
+    description: entry.description ? sanitizeString(entry.description) : undefined
+  }));
+}
+
+function normalizeMedia(media = {}) {
+  const photos = Array.isArray(media.photos)
+    ? media.photos.map(photo => ({
+        id: photo.id || randomUUID(),
+        url: sanitizeString(photo.url),
+        width: photo.width ? Number(photo.width) : undefined,
+        height: photo.height ? Number(photo.height) : undefined,
+        isHero: sanitizeBoolean(photo.isHero, false),
+        optimizedUrl: sanitizeString(photo.optimizedUrl) || undefined,
+        placeholderUrl: sanitizeString(photo.placeholderUrl) || undefined,
+        priority: sanitizeBoolean(photo.priority, false),
+        fullWidthPreferred: sanitizeBoolean(photo.fullWidthPreferred, false)
+      }))
+    : [];
+
+  const heroVideo = media.heroVideo
+    ? {
+        id: media.heroVideo.id || randomUUID(),
+        url: sanitizeString(media.heroVideo.url),
+        autoplayLoop: sanitizeBoolean(media.heroVideo.autoplayLoop, false),
+        durationSeconds: media.heroVideo.durationSeconds ? Number(media.heroVideo.durationSeconds) : undefined
+      }
+    : undefined;
+
+  const virtualTour = media.virtualTour
+    ? {
+        provider: sanitizeString(media.virtualTour.provider),
+        url: sanitizeString(media.virtualTour.url),
+        embedCode: sanitizeString(media.virtualTour.embedCode)
+      }
+    : undefined;
+
+  return { photos, heroVideo, virtualTour };
 }
 
 function list(query = {}, tenantId) {
@@ -117,7 +179,7 @@ function list(query = {}, tenantId) {
   const appliedLimit = clampedLimit;
 
   return {
-    items: sorted.slice(start, end).map(safeUnit),
+    items: sorted.slice(start, end).map(unit => safeUnit(unit, tenantId)),
     meta: {
       total: sorted.length,
       limit: appliedLimit,
@@ -128,13 +190,13 @@ function list(query = {}, tenantId) {
 
 function findById(id, tenantId) {
   const unit = datasets.inventory.find(u => u.id === id && matchesTenant(u.tenantId, tenantId));
-  return unit ? safeUnit(unit) : undefined;
+  return unit ? safeUnit(unit, tenantId) : undefined;
 }
 
 function findBySlug(slug, tenantId) {
   const tenant = normalizeTenantId(tenantId);
   const unit = datasets.inventory.find(item => matchesTenant(item.tenantId, tenant) && item.slug === slug);
-  return unit ? safeUnit(unit) : undefined;
+  return unit ? safeUnit(unit, tenant) : undefined;
 }
 
 function slugify(value) {
@@ -196,6 +258,10 @@ function create(payload, tenantId) {
       floorplans: Array.isArray(payload.floorplans) ? payload.floorplans : [],
       virtualTours: Array.isArray(payload.virtualTours) ? payload.virtualTours : [],
       videoLinks: Array.isArray(payload.videoLinks) ? payload.videoLinks : [],
+      salesStory: payload.salesStory ? sanitizeString(payload.salesStory) : undefined,
+      spotlights: normalizeSpotlights(payload.spotlights),
+      mediaHotspots: normalizeMediaHotspots(payload.mediaHotspots),
+      media: normalizeMedia(payload.media),
       condition: normalizedCondition,
       transferStatus: normalizedTransfer,
       holdUntil,
@@ -205,11 +271,12 @@ function create(payload, tenantId) {
     tenantId
   );
 
+  unit.badges = computeInventoryBadges(unit, normalizedTenant);
   unit.totalPrice = calculateTotalPrice(unit);
 
   datasets.inventory.push(unit);
   persist.inventory(datasets.inventory);
-  return { unit: safeUnit(unit) };
+  return { unit: safeUnit(unit, normalizedTenant) };
 }
 
 function update(id, payload, tenantId) {
@@ -240,6 +307,12 @@ function update(id, payload, tenantId) {
     taxes: payload.taxes !== undefined ? Number(payload.taxes) : previous.taxes || 0,
     vin: payload.vin ? sanitizeString(payload.vin) : previous.vin,
     slug: proposedSlug,
+    salesStory: payload.salesStory ? sanitizeString(payload.salesStory) : previous.salesStory,
+    spotlights: payload.spotlights ? normalizeSpotlights(payload.spotlights) : previous.spotlights || [],
+    mediaHotspots: payload.mediaHotspots
+      ? normalizeMediaHotspots(payload.mediaHotspots)
+      : previous.mediaHotspots || [],
+    media: payload.media ? normalizeMedia(payload.media) : previous.media,
     holdUntil: sanitizeHoldUntil(payload.holdUntil) || previous.holdUntil
   };
 
@@ -259,6 +332,7 @@ function update(id, payload, tenantId) {
     }
   }
 
+  updated.badges = computeInventoryBadges(updated, tenantId);
   updated.totalPrice = calculateTotalPrice(updated);
 
   const pricingChanges = PRICING_FIELDS.reduce((changes, field) => {
@@ -275,7 +349,7 @@ function update(id, payload, tenantId) {
 
   datasets.inventory[index] = updated;
   persist.inventory(datasets.inventory);
-  return { unit: safeUnit(updated), previous, pricingChanges };
+  return { unit: safeUnit(updated, tenantId), previous, pricingChanges };
 }
 
 function setFeatured(id, featured, tenantId) {
@@ -287,7 +361,7 @@ function setFeatured(id, featured, tenantId) {
   const updated = { ...datasets.inventory[index], featured: sanitizeBoolean(featured, true) };
   datasets.inventory[index] = updated;
   persist.inventory(datasets.inventory);
-  return { unit: safeUnit(updated) };
+  return { unit: safeUnit(updated, tenantId) };
 }
 
 function remove(id, tenantId) {
@@ -297,7 +371,7 @@ function remove(id, tenantId) {
   }
   const [removed] = datasets.inventory.splice(index, 1);
   persist.inventory(datasets.inventory);
-  return { unit: safeUnit(removed) };
+  return { unit: safeUnit(removed, tenantId) };
 }
 
 function stats(tenantId) {
@@ -318,6 +392,46 @@ function stats(tenantId) {
     byCondition,
     averagePrice
   };
+}
+
+function updateStory(id, salesStory, tenantId) {
+  const index = datasets.inventory.findIndex(u => u.id === id && matchesTenant(u.tenantId, tenantId));
+  if (index === -1) return { notFound: true };
+  const updated = { ...datasets.inventory[index], salesStory: sanitizeString(salesStory).slice(0, 4000) };
+  updated.badges = computeInventoryBadges(updated, tenantId);
+  datasets.inventory[index] = updated;
+  persist.inventory(datasets.inventory);
+  return { unit: safeUnit(updated, tenantId) };
+}
+
+function updateSpotlights(id, spotlights, tenantId) {
+  const index = datasets.inventory.findIndex(u => u.id === id && matchesTenant(u.tenantId, tenantId));
+  if (index === -1) return { notFound: true };
+  const updated = { ...datasets.inventory[index], spotlights: normalizeSpotlights(spotlights) };
+  updated.badges = computeInventoryBadges(updated, tenantId);
+  datasets.inventory[index] = updated;
+  persist.inventory(datasets.inventory);
+  return { unit: safeUnit(updated, tenantId) };
+}
+
+function updateMediaHotspots(id, mediaHotspots, tenantId) {
+  const index = datasets.inventory.findIndex(u => u.id === id && matchesTenant(u.tenantId, tenantId));
+  if (index === -1) return { notFound: true };
+  const updated = { ...datasets.inventory[index], mediaHotspots: normalizeMediaHotspots(mediaHotspots) };
+  updated.badges = computeInventoryBadges(updated, tenantId);
+  datasets.inventory[index] = updated;
+  persist.inventory(datasets.inventory);
+  return { unit: safeUnit(updated, tenantId) };
+}
+
+function updateMedia(id, media, tenantId) {
+  const index = datasets.inventory.findIndex(u => u.id === id && matchesTenant(u.tenantId, tenantId));
+  if (index === -1) return { notFound: true };
+  const updated = { ...datasets.inventory[index], media: normalizeMedia(media) };
+  updated.badges = computeInventoryBadges(updated, tenantId);
+  datasets.inventory[index] = updated;
+  persist.inventory(datasets.inventory);
+  return { unit: safeUnit(updated, tenantId) };
 }
 
 function importCsv(csv, tenantId) {
@@ -399,5 +513,9 @@ module.exports = {
   setFeatured,
   remove,
   stats,
-  importCsv
+  importCsv,
+  updateStory,
+  updateSpotlights,
+  updateMediaHotspots,
+  updateMedia
 };

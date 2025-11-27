@@ -9,6 +9,7 @@ const config = require('./src/config');
 const { DATA_DIR } = require('./src/persistence/store');
 const capabilityService = require('./src/services/capabilityService');
 const inventoryService = require('./src/services/inventoryService');
+const inventorySchemaService = require('./src/services/inventorySchemaService');
 const teamService = require('./src/services/teamService');
 const reviewService = require('./src/services/reviewService');
 const leadService = require('./src/services/leadService');
@@ -437,6 +438,12 @@ api.get('/inventory/:id', validateParams(schemas.idParam), (req, res, next) => {
   res.json(unit);
 });
 
+api.get('/inventory/:id/schema', validateParams(schemas.idParam), (req, res, next) => {
+  const result = inventorySchemaService.getSchemaForInventory(req.validated.params.id, req.tenant.id);
+  if (result.notFound) return next(new AppError('NOT_FOUND', 'Inventory not found', 404));
+  res.json(result.schema);
+});
+
 api.post('/inventory', requireAuth, authorize(['admin', 'sales']), validateBody(schemas.inventoryCreate), (req, res, next) => {
   const result = inventoryService.create(req.validated.body, req.tenant.id);
   if (result.error) return next(new AppError('VALIDATION_ERROR', result.error, 400));
@@ -457,6 +464,62 @@ api.put('/inventory/:id', requireAuth, authorize(['admin', 'sales']), validateBo
   webhookService.trigger('inventory.updated', result.unit, req.tenant.id);
   res.json(result.unit);
 });
+
+api.patch(
+  '/inventory/:id/story',
+  requireAuth,
+  authorize(['admin', 'sales']),
+  validateBody(schemas.inventoryStoryUpdate),
+  (req, res, next) => {
+    const result = inventoryService.updateStory(req.params.id, req.validated.body.salesStory, req.tenant.id);
+    if (result.notFound) return next(new AppError('NOT_FOUND', 'Inventory not found', 404));
+    auditChange(req, 'update', 'inventory_story', result.unit);
+    res.json(result.unit);
+  }
+);
+
+api.patch(
+  '/inventory/:id/spotlights',
+  requireAuth,
+  authorize(['admin', 'sales', 'marketing']),
+  validateBody(schemas.inventorySpotlightsUpdate),
+  (req, res, next) => {
+    const result = inventoryService.updateSpotlights(req.params.id, req.validated.body.spotlights, req.tenant.id);
+    if (result.notFound) return next(new AppError('NOT_FOUND', 'Inventory not found', 404));
+    auditChange(req, 'update', 'inventory_spotlights', result.unit);
+    res.json(result.unit);
+  }
+);
+
+api.patch(
+  '/inventory/:id/hotspots',
+  requireAuth,
+  authorize(['admin', 'sales', 'marketing']),
+  validateBody(schemas.inventoryHotspotsUpdate),
+  (req, res, next) => {
+    const result = inventoryService.updateMediaHotspots(
+      req.params.id,
+      req.validated.body.mediaHotspots,
+      req.tenant.id
+    );
+    if (result.notFound) return next(new AppError('NOT_FOUND', 'Inventory not found', 404));
+    auditChange(req, 'update', 'inventory_hotspots', result.unit);
+    res.json(result.unit);
+  }
+);
+
+api.patch(
+  '/inventory/:id/media',
+  requireAuth,
+  authorize(['admin', 'sales', 'marketing']),
+  validateBody(schemas.inventoryMediaUpdate),
+  (req, res, next) => {
+    const result = inventoryService.updateMedia(req.params.id, req.validated.body.media, req.tenant.id);
+    if (result.notFound) return next(new AppError('NOT_FOUND', 'Inventory not found', 404));
+    auditChange(req, 'update', 'inventory_media', result.unit);
+    res.json(result.unit);
+  }
+);
 
 api.post(
   '/inventory/import',

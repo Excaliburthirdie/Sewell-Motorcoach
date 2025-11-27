@@ -58,6 +58,54 @@ const inventoryListQuery = paginationSchema.extend({
   tenantId: z.string().trim().min(1).optional()
 });
 
+const spotlight = z.object({
+  id: z.string().trim().optional(),
+  title: z.string().trim(),
+  description: z.string().trim(),
+  valueTag: z.string().trim().optional(),
+  priority: z.union([z.number(), z.string()]).optional().transform(val => (val === undefined ? 0 : Number(val)))
+});
+
+const mediaHotspot = z.object({
+  id: z.string().trim().optional(),
+  mediaId: z.string().trim().optional(),
+  x: z.number().refine(val => val >= 0 && val <= 1, { message: 'x must be between 0 and 1' }),
+  y: z.number().refine(val => val >= 0 && val <= 1, { message: 'y must be between 0 and 1' }),
+  label: z.string().trim(),
+  description: z.string().trim().optional()
+});
+
+const mediaPhoto = z.object({
+  id: z.string().trim().optional(),
+  url: z.string().url(),
+  width: z.number().optional(),
+  height: z.number().optional(),
+  isHero: z.boolean().optional(),
+  optimizedUrl: z.string().url().optional(),
+  placeholderUrl: z.string().optional(),
+  priority: z.boolean().optional(),
+  fullWidthPreferred: z.boolean().optional()
+});
+
+const mediaHeroVideo = z.object({
+  id: z.string().trim().optional(),
+  url: z.string().url(),
+  autoplayLoop: z.boolean().optional(),
+  durationSeconds: z.number().optional()
+});
+
+const mediaVirtualTour = z.object({
+  provider: z.string().trim().optional(),
+  url: z.string().url(),
+  embedCode: z.string().trim().optional()
+});
+
+const mediaSchema = z.object({
+  photos: z.array(mediaPhoto).optional(),
+  heroVideo: mediaHeroVideo.optional(),
+  virtualTour: mediaVirtualTour.optional()
+});
+
 const inventoryBase = z.object({
   stockNumber: z.string().trim(),
   vin: z
@@ -94,12 +142,21 @@ const inventoryBase = z.object({
   description: z.string().trim().optional(),
   slug: z.string().trim().min(3).optional(),
   metaTitle: z.string().trim().optional(),
-  metaDescription: z.string().trim().optional()
+  metaDescription: z.string().trim().optional(),
+  salesStory: z.string().trim().max(4000).optional(),
+  spotlights: z.array(spotlight).optional(),
+  mediaHotspots: z.array(mediaHotspot).optional(),
+  badges: z.array(z.string().trim()).optional(),
+  media: mediaSchema.optional()
 });
 
 const inventoryCreate = inventoryBase;
 const inventoryUpdate = inventoryBase.partial();
 const inventoryFeatureUpdate = z.object({ featured: z.boolean() });
+const inventoryStoryUpdate = z.object({ salesStory: z.string().trim().max(4000) });
+const inventorySpotlightsUpdate = z.object({ spotlights: z.array(spotlight) });
+const inventoryHotspotsUpdate = z.object({ mediaHotspots: z.array(mediaHotspot) });
+const inventoryMediaUpdate = z.object({ media: mediaSchema });
 const inventoryBulkImport = z.object({
   csv: z.string().trim().min(1),
   tenantId: z.string().trim().min(1).optional()
@@ -362,6 +419,10 @@ module.exports = {
     inventoryUpdate,
     inventoryFeatureUpdate,
     inventoryBulkImport,
+    inventoryStoryUpdate,
+    inventorySpotlightsUpdate,
+    inventoryHotspotsUpdate,
+    inventoryMediaUpdate,
     teamCreate,
     teamUpdate,
     reviewCreate,
