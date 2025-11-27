@@ -5,15 +5,27 @@ const { computeInventoryBadges } = require('./inventoryBadges');
 
 const TRACKED_FIELDS = ['salesStory', 'spotlights', 'mediaHotspots'];
 
-function addRevision(inventoryId, field, previousValue, tenantId, changedBy) {
+function snapshot(value) {
+  if (value === undefined) return null;
+  try {
+    return JSON.parse(JSON.stringify(value));
+  } catch (_err) {
+    return value;
+  }
+}
+
+function addRevision(inventoryId, field, previousValue, tenantId, changedBy, nextValue) {
   if (!TRACKED_FIELDS.includes(field)) return;
   const normalizedTenant = normalizeTenantId(tenantId);
+  const revisionId = randomUUID();
   const revision = {
-    id: randomUUID(),
+    id: revisionId,
+    revisionId,
     inventoryId,
     tenantId: normalizedTenant,
     field,
-    previousValue: previousValue === undefined ? null : previousValue,
+    previousValue: snapshot(previousValue),
+    nextValue: snapshot(nextValue),
     changedBy: changedBy || 'system',
     changedAt: new Date().toISOString()
   };
@@ -29,7 +41,7 @@ function listRevisions(inventoryId, tenantId) {
     .sort((a, b) => new Date(b.changedAt).getTime() - new Date(a.changedAt).getTime());
 }
 
-function restoreRevision(inventoryId, revisionId, tenantId) {
+function restoreRevision(inventoryId, revisionId, tenantId, changedBy) {
   const normalizedTenant = normalizeTenantId(tenantId);
   const revision = datasets.inventoryRevisions.find(
     rev => rev.id === revisionId && rev.inventoryId === inventoryId && matchesTenant(rev.tenantId, normalizedTenant)
@@ -43,6 +55,7 @@ function restoreRevision(inventoryId, revisionId, tenantId) {
   if (index === -1) {
     return { notFound: true };
   }
+  addRevision(inventoryId, revision.field, datasets.inventory[index][revision.field], tenantId, changedBy, revision.previousValue);
   const updated = { ...datasets.inventory[index], [revision.field]: revision.previousValue };
   updated.badges = computeInventoryBadges(updated, normalizedTenant);
   datasets.inventory[index] = updated;

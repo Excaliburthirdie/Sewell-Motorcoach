@@ -77,7 +77,10 @@ const datasets = {
   redirects: normalizeTenantedCollection(loadData('redirects.json', [])),
   spotlightTemplates: normalizeTenantedCollection(loadData('spotlightTemplates.json', [])),
   blockPresets: normalizeTenantedCollection(loadData('blockPresets.json', [])),
-  experiments: normalizeTenantedCollection(loadData('experiments.json', []))
+  experiments: normalizeTenantedCollection(loadData('experiments.json', [])),
+  tasks: normalizeTenantedCollection(loadData('tasks.json', [])),
+  notifications: normalizeTenantedCollection(loadData('notifications.json', [])),
+  campaigns: normalizeTenantedCollection(loadData('campaigns.json', []))
 };
 
 const persist = {
@@ -106,7 +109,10 @@ const persist = {
   inventoryRevisions: data => saveData('inventoryRevisions.json', data),
   spotlightTemplates: data => saveData('spotlightTemplates.json', data),
   blockPresets: data => saveData('blockPresets.json', data),
-  experiments: data => saveData('experiments.json', data)
+  experiments: data => saveData('experiments.json', data),
+  tasks: data => saveData('tasks.json', data),
+  notifications: data => saveData('notifications.json', data),
+  campaigns: data => saveData('campaigns.json', data)
 };
 
 module.exports = {

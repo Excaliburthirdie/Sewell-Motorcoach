@@ -13,6 +13,7 @@ const inventorySchemaService = require('./src/services/inventorySchemaService');
 const teamService = require('./src/services/teamService');
 const reviewService = require('./src/services/reviewService');
 const leadService = require('./src/services/leadService');
+const leadScoringService = require('./src/services/leadScoringService');
 const settingsService = require('./src/services/settingsService');
 const contentPageService = require('./src/services/contentPageService');
 const eventService = require('./src/services/eventService');
@@ -34,6 +35,10 @@ const inventoryRevisionService = require('./src/services/inventoryRevisionServic
 const spotlightTemplateService = require('./src/services/spotlightTemplateService');
 const blockPresetService = require('./src/services/blockPresetService');
 const experimentService = require('./src/services/experimentService');
+const taskService = require('./src/services/taskService');
+const notificationService = require('./src/services/notificationService');
+const leadEngagementService = require('./src/services/leadEngagementService');
+const campaignService = require('./src/services/campaignService');
 const { validateBody, validateParams, validateQuery } = require('./src/middleware/validation');
 const { schemas } = require('./src/validation/schemas');
 const { AppError, errorHandler } = require('./src/middleware/errors');
@@ -462,7 +467,8 @@ api.post(
     const result = inventoryRevisionService.restoreRevision(
       req.params.id,
       req.params.revisionId,
-      req.tenant.id
+      req.tenant.id,
+      req.user?.email || req.user?.id
     );
     if (result.notFound) return next(new AppError('NOT_FOUND', 'Revision not found', 404));
     auditChange(req, 'restore', 'inventory_revision', { revisionId: req.params.revisionId, id: req.params.id });
@@ -835,6 +841,10 @@ api.get('/seo/health', requireAuth, authorize(['admin', 'marketing']), (req, res
   res.json(seoService.seoHealth(req.tenant.id));
 });
 
+api.get('/seo/topics', requireAuth, authorize(['admin', 'marketing']), (req, res) => {
+  res.json(seoService.topics(req.tenant.id));
+});
+
 api.get('/leads', requireAuth, authorize(['admin', 'sales', 'marketing']), validateQuery(schemas.leadListQuery), (req, res) => {
   res.json(leadService.list(req.validated.query, req.tenant.id));
 });
@@ -843,6 +853,29 @@ api.get('/leads/:id', requireAuth, authorize(['admin', 'sales', 'marketing']), (
   const lead = leadService.findById(req.params.id, req.tenant.id);
   if (!lead) return next(new AppError('NOT_FOUND', 'Lead not found', 404));
   res.json(lead);
+});
+
+api.get('/leads/:id/score', requireAuth, authorize(['admin', 'sales', 'marketing']), (req, res, next) => {
+  const result = leadScoringService.recomputeLead(req.params.id, req.tenant.id);
+  if (result.notFound) return next(new AppError('NOT_FOUND', 'Lead not found', 404));
+  res.json(result);
+});
+
+api.post(
+  '/leads/recompute-score',
+  requireAuth,
+  authorize(['admin', 'sales', 'marketing']),
+  validateBody(schemas.leadScoreRecompute),
+  (req, res) => {
+    const result = leadScoringService.recomputeBulk(req.validated.body, req.tenant.id);
+    res.json(result);
+  }
+);
+
+api.get('/leads/:id/timeline', requireAuth, authorize(['admin', 'sales', 'marketing']), (req, res, next) => {
+  const result = leadEngagementService.timeline(req.params.id, req.tenant.id);
+  if (result.notFound) return next(new AppError('NOT_FOUND', 'Lead not found', 404));
+  res.json(result);
 });
 
 api.post('/leads', validateBody(schemas.leadCreate), (req, res, next) => {
@@ -873,6 +906,46 @@ api.delete('/leads/:id', requireAuth, authorize(['admin', 'marketing']), (req, r
   if (result.notFound) return next(new AppError('NOT_FOUND', 'Lead not found', 404));
   res.status(204).send();
 });
+
+api.get('/tasks', requireAuth, authorize(['admin', 'sales', 'marketing']), validateQuery(schemas.taskListQuery), (req, res) => {
+  res.json(taskService.list(req.validated.query, req.tenant.id));
+});
+
+api.post('/tasks', requireAuth, authorize(['admin', 'sales', 'marketing']), validateBody(schemas.taskCreate), (req, res, next) => {
+  const result = taskService.create(req.validated.body, req.tenant.id);
+  if (result.error) return next(new AppError('VALIDATION_ERROR', result.error, 400));
+  res.status(201).json(result.task);
+});
+
+api.patch('/tasks/:id', requireAuth, authorize(['admin', 'sales', 'marketing']), validateBody(schemas.taskUpdate), (req, res, next) => {
+  const result = taskService.update(req.params.id, req.validated.body, req.tenant.id);
+  if (result.notFound) return next(new AppError('NOT_FOUND', 'Task not found', 404));
+  if (result.error) return next(new AppError('VALIDATION_ERROR', result.error, 400));
+  res.json(result.task);
+});
+
+api.get(
+  '/notifications',
+  requireAuth,
+  authorize(['admin', 'sales', 'marketing']),
+  validateQuery(schemas.notificationListQuery),
+  (req, res) => {
+    res.json(notificationService.list(req.validated.query, req.tenant.id));
+  }
+);
+
+api.patch(
+  '/notifications/:id',
+  requireAuth,
+  authorize(['admin', 'sales', 'marketing']),
+  validateBody(schemas.notificationStatusUpdate),
+  (req, res, next) => {
+    const result = notificationService.updateStatus(req.params.id, req.validated.body.status, req.tenant.id);
+    if (result.notFound) return next(new AppError('NOT_FOUND', 'Notification not found', 404));
+    if (result.error) return next(new AppError('VALIDATION_ERROR', result.error, 400));
+    res.json(result.notification);
+  }
+);
 
 api.get('/customers', requireAuth, authorize(['admin', 'sales', 'marketing']), validateQuery(schemas.customerListQuery), (req, res) => {
   res.json(customerService.list(req.validated.query, req.tenant.id));
@@ -970,6 +1043,33 @@ api.post('/events', validateBody(schemas.eventCreate), (req, res, next) => {
   res.status(201).json(result.event);
 });
 
+api.get('/campaigns', requireAuth, authorize(['admin', 'marketing']), (req, res) => {
+  res.json(campaignService.list(req.query, req.tenant.id));
+});
+
+api.post('/campaigns', requireAuth, authorize(['admin', 'marketing']), validateBody(schemas.campaignCreate), (req, res, next) => {
+  const result = campaignService.create(req.validated.body, req.tenant.id);
+  if (result.error) return next(new AppError('VALIDATION_ERROR', result.error, 400));
+  res.status(201).json(result.campaign);
+});
+
+api.patch(
+  '/campaigns/:id',
+  requireAuth,
+  authorize(['admin', 'marketing']),
+  validateBody(schemas.campaignUpdate),
+  (req, res, next) => {
+    const result = campaignService.update(req.params.id, req.validated.body, req.tenant.id);
+    if (result.notFound) return next(new AppError('NOT_FOUND', 'Campaign not found', 404));
+    if (result.error) return next(new AppError('VALIDATION_ERROR', result.error, 400));
+    res.json(result.campaign);
+  }
+);
+
+api.get('/reports/campaigns/performance', requireAuth, authorize(['admin', 'marketing']), (req, res) => {
+  res.json(campaignService.performance(req.tenant.id));
+});
+
 api.get('/teams', (req, res) => {
   res.json(teamService.list(req.query, req.tenant.id));
 });
@@ -1038,6 +1138,21 @@ api.patch(
   }
 );
 
+api.get('/settings/lead-scoring', requireAuth, authorize(['admin', 'marketing']), (req, res) => {
+  res.json({ leadScoringRules: settingsService.getLeadScoringRules(req.tenant.id) });
+});
+
+api.patch(
+  '/settings/lead-scoring',
+  requireAuth,
+  authorize(['admin', 'marketing']),
+  validateBody(schemas.leadScoringRulesUpdate),
+  (req, res) => {
+    const result = settingsService.updateLeadScoringRules(req.validated.body, req.tenant.id);
+    res.json(result.leadScoringRules);
+  }
+);
+
 api.get('/health', (req, res) => {
   const writable = checkDataDirWritable();
   const status = writable ? 'ok' : 'degraded';
@@ -1055,28 +1170,25 @@ api.get('/health', (req, res) => {
 
 api.get('/sitemap', (req, res) => {
   const tenantId = req.tenant.id;
-  const profiles = seoService.list({}, tenantId);
-  const profileFor = (resourceType, id) => profiles.find(p => p.resourceType === resourceType && p.resourceId === id);
-  const inventory = inventoryService.list({}, tenantId).items.map(item => {
-    const profile = profileFor('inventory', item.id);
-    const slug = item.slug || item.id;
+  const inventoryItems = inventoryService.list({}, tenantId).items;
+  const inventory = inventoryItems.map(item => {
+    const canonicalUrl = seoService.resolveCanonical('inventory', item.id, tenantId, () => item);
     return {
       type: 'inventory',
-      slug,
+      slug: item.slug || item.id,
       id: item.id,
-      canonicalUrl: profile?.canonicalUrl || `/inventory/${slug}`,
+      canonicalUrl,
       lastmod: item.updatedAt || item.createdAt,
       priority: 0.8
     };
   });
   const pages = contentPageService.list({ status: 'published' }, tenantId).map(page => {
-    const profile = profileFor('content', page.id);
-    const slug = page.slug || page.id;
+    const canonicalUrl = seoService.resolveCanonical('content', page.id, tenantId, () => page);
     return {
       type: 'content',
-      slug,
+      slug: page.slug || page.id,
       id: page.id,
-      canonicalUrl: profile?.canonicalUrl || `/pages/${slug}`,
+      canonicalUrl,
       lastmod: page.updatedAt || page.createdAt,
       priority: 0.6
     };

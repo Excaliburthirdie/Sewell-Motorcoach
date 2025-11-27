@@ -1,5 +1,7 @@
 const { z } = require('./zodLite');
 const { VALID_LEAD_STATUSES } = require('../services/leadService');
+const { VALID_TASK_STATUSES } = require('../services/taskService');
+const { VALID_NOTIFICATION_STATUSES } = require('../services/notificationService');
 const { CONTACT_METHODS } = require('../services/customerService');
 const { VALID_TICKET_STATUSES } = require('../services/serviceTicketService');
 const { ALLOWED_EVENTS } = require('../services/webhookService');
@@ -244,6 +246,59 @@ const leadListQuery = z.object({
   tenantId: z.string().trim().min(1).optional()
 });
 
+const leadScoreRecompute = z
+  .object({
+    leadIds: z.array(z.string().trim()).optional(),
+    all: z.boolean().optional()
+  })
+  .refine(val => val.all || (val.leadIds && val.leadIds.length > 0), {
+    message: 'Provide leadIds or set all=true'
+  });
+
+const leadScoringRulesUpdate = z.object({
+  baseScore: z.union([z.number(), z.string()]).optional().transform(val => (val === undefined ? undefined : Number(val))),
+  repeatViewWeight: z
+    .union([z.number(), z.string()])
+    .optional()
+    .transform(val => (val === undefined ? undefined : Number(val))),
+  highValuePriceThreshold: z
+    .union([z.number(), z.string()])
+    .optional()
+    .transform(val => (val === undefined ? undefined : Number(val))),
+  highValueScore: z.union([z.number(), z.string()]).optional().transform(val => (val === undefined ? undefined : Number(val))),
+  engagementDurationMs: z
+    .union([z.number(), z.string()])
+    .optional()
+    .transform(val => (val === undefined ? undefined : Number(val))),
+  scrollDepthThreshold: z
+    .union([z.number(), z.string()])
+    .optional()
+    .transform(val => (val === undefined ? undefined : Number(val))),
+  engagementScore: z
+    .union([z.number(), z.string()])
+    .optional()
+    .transform(val => (val === undefined ? undefined : Number(val))),
+  engagementCap: z.union([z.number(), z.string()]).optional().transform(val => (val === undefined ? undefined : Number(val))),
+  submissionScore: z
+    .union([z.number(), z.string()])
+    .optional()
+    .transform(val => (val === undefined ? undefined : Number(val))),
+  alertEngagementScore: z
+    .union([z.number(), z.string()])
+    .optional()
+    .transform(val => (val === undefined ? undefined : Number(val))),
+  alertCap: z.union([z.number(), z.string()]).optional().transform(val => (val === undefined ? undefined : Number(val))),
+  segmentRules: z
+    .array(
+      z.object({
+        id: z.string().trim(),
+        minScore: z.union([z.number(), z.string()]).transform(val => Number(val))
+      })
+    )
+    .optional(),
+  tenantId: z.string().trim().optional()
+});
+
 const customerCreate = z.object({
   firstName: z.string().trim(),
   lastName: z.string().trim(),
@@ -306,7 +361,9 @@ const contentPageCreate = z.object({
   metaTitle: z.string().trim().optional(),
   metaDescription: z.string().trim().optional(),
   status: z.enum(['draft', 'scheduled', 'published']).optional(),
-  publishAt: z.string().trim().optional()
+  publishAt: z.string().trim().optional(),
+  topic: z.string().trim().optional(),
+  relatedTopics: z.array(z.string().trim()).optional()
 });
 
 const contentPageUpdate = contentPageCreate.partial();
@@ -320,7 +377,17 @@ const eventCreate = z.object({
   stockNumber: z.string().trim().optional(),
   leadId: z.string().trim().optional(),
   query: z.string().trim().optional(),
-  referrer: z.string().trim().optional()
+  referrer: z.string().trim().optional(),
+  interaction: z.string().trim().optional(),
+  section: z.string().trim().optional(),
+  durationMs: z.union([z.number(), z.string()]).optional().transform(val => (val === undefined ? undefined : Number(val))),
+  scrollDepth: z
+    .union([z.number(), z.string()])
+    .optional()
+    .transform(val => (val === undefined ? undefined : Number(val))),
+  utmSource: z.string().trim().optional(),
+  utmMedium: z.string().trim().optional(),
+  utmCampaign: z.string().trim().optional()
 });
 
 const settingsUpdate = z.object({
@@ -456,6 +523,33 @@ const webhookDeliveryQuery = z.object({
   limit: z.union([z.number(), z.string()]).optional().transform(val => (val === undefined ? 50 : Number(val)))
 });
 
+const taskCreate = z.object({
+  title: z.string().trim(),
+  notes: z.string().trim().optional(),
+  contactId: z.string().trim().optional(),
+  assignedTo: z.string().trim().optional(),
+  status: z.enum(VALID_TASK_STATUSES).optional(),
+  dueAt: z.string().trim().optional(),
+  tenantId: z.string().trim().min(1).optional()
+});
+
+const taskUpdate = taskCreate.partial();
+
+const taskListQuery = z.object({
+  status: z.enum(VALID_TASK_STATUSES).optional(),
+  assignedTo: z.string().trim().optional(),
+  contactId: z.string().trim().optional(),
+  dueFrom: z.string().trim().optional(),
+  dueTo: z.string().trim().optional()
+});
+
+const notificationStatusUpdate = z.object({ status: z.enum(VALID_NOTIFICATION_STATUSES) });
+
+const notificationListQuery = z.object({
+  status: z.enum(VALID_NOTIFICATION_STATUSES).optional(),
+  contactId: z.string().trim().optional()
+});
+
 const webhookListQuery = z.object({
   eventType: z.enum(ALLOWED_EVENTS).optional(),
   active: z
@@ -479,6 +573,21 @@ const redirectCreate = z.object({
   createdBy: z.string().trim().optional(),
   tenantId: z.string().trim().min(1).optional()
 });
+
+const campaignCreate = z.object({
+  name: z.string().trim(),
+  slug: z.string().trim(),
+  channel: z.string().trim(),
+  startAt: z.string().trim().optional(),
+  endAt: z.string().trim().optional(),
+  targetLandingPageSlug: z.string().trim().optional(),
+  utmSource: z.string().trim().optional(),
+  utmMedium: z.string().trim().optional(),
+  utmCampaign: z.string().trim().optional(),
+  tenantId: z.string().trim().optional()
+});
+
+const campaignUpdate = campaignCreate.partial();
 
 const auditLogQuery = z.object({
   tenantId: z.string().trim().optional(),
@@ -514,6 +623,8 @@ module.exports = {
     leadUpdate,
     leadListQuery,
     leadStatusUpdate,
+    leadScoreRecompute,
+    leadScoringRulesUpdate,
     customerCreate,
     customerUpdate,
     customerListQuery,
@@ -548,7 +659,14 @@ module.exports = {
     webhookListQuery,
     webhookDeliveryQuery,
     auditLogQuery,
-    redirectCreate
+    redirectCreate,
+    campaignCreate,
+    campaignUpdate,
+    taskCreate,
+    taskUpdate,
+    taskListQuery,
+    notificationStatusUpdate,
+    notificationListQuery
   },
   constants: {
     INVENTORY_CONDITIONS,

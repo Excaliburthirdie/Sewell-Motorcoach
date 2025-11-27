@@ -5,6 +5,7 @@ const { DATA_DIR } = require('../persistence/store');
 const { escapeOutputPayload, sanitizeBoolean, sanitizePayloadStrings, validateFields } = require('./shared');
 const { maskSensitiveFields } = require('./security');
 const { attachTenant, matchesTenant, normalizeTenantId } = require('./tenantService');
+const campaignService = require('./campaignService');
 
 const VALID_LEAD_STATUSES = ['new', 'contacted', 'qualified', 'won', 'lost'];
 const VALID_TRANSITIONS = {
@@ -71,6 +72,8 @@ function create(payload, tenantId) {
   const status = VALID_LEAD_STATUSES.includes(body.status) ? body.status : 'new';
   const assignedTo = ASSIGNABLE_ROLES.includes(body.assignedTo) ? body.assignedTo : undefined;
 
+  const matchedCampaign = body.utmCampaign ? campaignService.findBySlug(body.utmCampaign, tenantId) : null;
+
   const lead = attachTenant(
     {
       id: randomUUID(),
@@ -80,7 +83,13 @@ function create(payload, tenantId) {
       subject: body.subject || 'General inquiry',
       assignedTo,
       dueDate: sanitizeDate(body.dueDate),
-      lastContactedAt: sanitizeDate(body.lastContactedAt)
+      lastContactedAt: sanitizeDate(body.lastContactedAt),
+      leadScore: 0,
+      scoreReasons: [],
+      segments: [],
+      scoreHistory: [],
+      firstTouchCampaignId: matchedCampaign?.id,
+      lastTouchCampaignId: matchedCampaign?.id
     },
     tenantId
   );
@@ -122,13 +131,17 @@ function update(id, payload, tenantId) {
     ? updates.assignedTo
     : datasets.leads[index].assignedTo;
 
+  const matchedCampaign = updates.utmCampaign ? campaignService.findBySlug(updates.utmCampaign, tenantId) : null;
+
   datasets.leads[index] = {
     ...datasets.leads[index],
     ...updates,
     status: nextStatus,
     assignedTo,
     dueDate: sanitizeDate(updates.dueDate) || datasets.leads[index].dueDate,
-    lastContactedAt: sanitizeDate(updates.lastContactedAt) || datasets.leads[index].lastContactedAt
+    lastContactedAt: sanitizeDate(updates.lastContactedAt) || datasets.leads[index].lastContactedAt,
+    firstTouchCampaignId: datasets.leads[index].firstTouchCampaignId || matchedCampaign?.id,
+    lastTouchCampaignId: matchedCampaign?.id || datasets.leads[index].lastTouchCampaignId
   };
   persist.leads(datasets.leads);
   auditLeadChange(tenantId, id, 'system', before, datasets.leads[index]);

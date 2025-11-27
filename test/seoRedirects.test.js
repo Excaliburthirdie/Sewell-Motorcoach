@@ -76,6 +76,34 @@ describe('seoService.seoHealth', () => {
   });
 });
 
+describe('seoService canonical resolution', () => {
+  beforeEach(() => {
+    mock.method(persist, 'seoProfiles', () => {});
+    datasets.seoProfiles = [];
+  });
+
+  afterEach(() => {
+    mock.restoreAll();
+  });
+
+  it('prefers profile canonical and normalizes relative paths', () => {
+    datasets.seoProfiles.push({
+      id: 'c1',
+      resourceType: 'inventory',
+      resourceId: 'inv-1',
+      canonicalUrl: 'inventory/custom',
+      tenantId: 'main'
+    });
+    const canonical = seoService.resolveCanonical('inventory', 'inv-1', 'main', () => ({ id: 'inv-1', slug: 'inv-1' }));
+    assert.equal(canonical, '/inventory/custom');
+  });
+
+  it('falls back to default canonical when profile missing', () => {
+    const canonical = seoService.resolveCanonical('content', 'page-1', 'main', () => ({ id: 'page-1', slug: 'page-1' }));
+    assert.equal(canonical, '/pages/page-1');
+  });
+});
+
 describe('redirectService', () => {
   let persistMock;
   beforeEach(() => {
@@ -98,6 +126,12 @@ describe('redirectService', () => {
 
   it('prevents duplicate sourcePath within tenant', () => {
     redirectService.create({ sourcePath: '/old', targetPath: '/new' }, 'main');
+    const result = redirectService.create({ sourcePath: '/old', targetPath: '/newer' }, 'main');
+    assert.match(result.error, /already exists/i);
+  });
+
+  it('treats sourcePath comparison as case-insensitive and trims', () => {
+    redirectService.create({ sourcePath: ' /Old ', targetPath: '/new' }, 'main');
     const result = redirectService.create({ sourcePath: '/old', targetPath: '/newer' }, 'main');
     assert.match(result.error, /already exists/i);
   });

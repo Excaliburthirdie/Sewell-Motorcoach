@@ -28,6 +28,7 @@ JWT-based auth with optional legacy API key support. Highlights include:
   page-builder layouts.
 - **SEO management** – store SEO profiles, auto-fill missing records, and scope metadata to any resource.
 - **Analytics & events** – accept analytics events, view dashboard rollups, and emit internal events for metrics aggregation.
+- **Sales engagement** – manage tasks, notifications, and per-lead timelines that unify events, follow-ups, and alerts.
 - **AI control center** – register AI providers, capture observations, fetch AI suggestions, and optionally run remote web fetches
   (gated by `AI_WEB_FETCH`).
 - **Webhooks** – create/update/delete outbound webhooks, list deliveries, and trigger them automatically on key events
@@ -221,10 +222,18 @@ A step-by-step import guide (CSV layout, authentication flow, and troubleshootin
 |   POST | `/seo/autofill`                    | Auto-create missing SEO profiles (admin/marketing)             |
 |   GET  | `/leads`                           | List leads with filters (admin/sales/marketing)                |
 |   GET  | `/leads/:id`                       | Retrieve a lead by ID (admin/sales/marketing)                  |
+|   GET  | `/leads/:id/score`                 | Recompute and return lead score + reasons (admin/sales/marketing) |
 |   POST | `/leads`                           | Record a new lead submission                                   |
 |   PUT  | `/leads/:id`                       | Update lead details (admin/sales/marketing)                    |
 |  PATCH | `/leads/:id/status`                | Update lead status (admin/sales/marketing)                     |
+|  POST | `/leads/recompute-score`            | Bulk recompute scores for provided leads (admin/sales/marketing) |
 | DELETE | `/leads/:id`                       | Delete a lead (admin/marketing)                                |
+|   GET  | `/settings/lead-scoring`           | Retrieve tenant scoring rules (admin/marketing)                |
+|  PATCH | `/settings/lead-scoring`           | Update tenant scoring rules (admin/marketing)                  |
+|   GET  | `/campaigns`                       | List campaigns (admin/marketing)                               |
+|   POST | `/campaigns`                       | Create a campaign (admin/marketing)                            |
+|  PATCH | `/campaigns/:id`                   | Update a campaign (admin/marketing)                            |
+|   GET  | `/reports/campaigns/performance`   | Campaign performance metrics (admin/marketing)                 |
 |   GET  | `/customers`                       | List customers with pagination/filters (admin/sales/marketing) |
 |   GET  | `/customers/:id`                   | Retrieve a customer by ID (admin/sales/marketing)              |
 |   POST | `/customers`                       | Create a customer (admin/sales/marketing)                      |
