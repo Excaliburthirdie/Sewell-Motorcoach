@@ -292,6 +292,23 @@ class ObjectSchema extends BaseSchema {
   }
 }
 
+class AnySchema extends BaseSchema {
+  parse(input, path = []) {
+    const optionalCheck = this._applyOptional(input);
+    if (optionalCheck.success !== null) {
+      return optionalCheck.success ? optionalCheck.value : this._error(optionalCheck.message, path);
+    }
+    const transformed = this._applyTransform(input);
+    const refined = this._applyRefine(transformed);
+    if (!refined.success) return this._error(refined.message, path);
+    return transformed;
+  }
+
+  _error(message, path) {
+    throw new ZodError([{ path, message }]);
+  }
+}
+
 const z = {
   string: () => new StringSchema(),
   number: () => new NumberSchema(),
@@ -299,7 +316,8 @@ const z = {
   enum: values => new EnumSchema(values),
   array: schema => new ArraySchema(schema),
   union: schemas => new UnionSchema(schemas),
-  object: shape => new ObjectSchema(shape)
+  object: shape => new ObjectSchema(shape),
+  any: () => new AnySchema()
 };
 
 module.exports = { z, ZodError };

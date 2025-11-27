@@ -22,6 +22,7 @@ MongoDB) by replacing the helper functions in `index.js`.
 - **Service tickets** – log unit issues, scheduling, technicians and line items.
 - **Finance offers** – manage lender programs and publish current terms.
 - **Complete auth lifecycle** – login, refresh, logout/revoke and `me` profile.
+- **Page experience toolkit** – content page layouts, SEO profiles, analytics events and AI-assisted insights.
 
 Each resource is exposed via a separate REST endpoint.  The API can be
 consumed by a front‑end application or even imported into WordPress via
@@ -383,3 +384,14 @@ full checklist is available.
 98. Backup and disaster recovery runbooks with tested restore drills.
 99. Immutable event log or change data capture stream for analytics.
 100. Observability-driven postmortem process with action item tracking.
+
+### Digital experience capabilities
+
+- **SEO profiles.** Manage per-page and per-inventory metadata via `GET/POST /seo/profiles` and auto-generate missing records with
+  `POST /seo/autofill`.
+- **Analytics dashboard.** Emit lightweight analytics events (`POST /analytics/events`) and review the consolidated tenant view at
+  `GET /analytics/dashboard`.
+- **Layout drafts.** Use `POST /content/:id/layout` to save page builder blocks/widgets, then publish with
+  `POST /content/:id/layout/publish`.
+- **AI control center.** Register providers (`POST /ai/providers`), capture observations (`POST /ai/observe`), request AI-backed
+  suggestions (`GET /ai/suggestions`) and optionally run remote lookups (`POST /ai/web-fetch`) when `AI_WEB_FETCH=true`.

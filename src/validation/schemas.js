@@ -258,6 +258,64 @@ const authRefresh = z.object({
 
 const authLogout = authRefresh;
 
+const seoProfileUpsert = z.object({
+  resourceType: z.enum(['inventory', 'content', 'custom']),
+  resourceId: z.string().trim(),
+  metaTitle: z.string().trim().optional(),
+  metaDescription: z.string().trim().optional(),
+  canonicalUrl: z.string().trim().optional(),
+  ogTitle: z.string().trim().optional(),
+  ogDescription: z.string().trim().optional(),
+  ogImage: z.string().trim().optional(),
+  focusKeywords: z.array(z.string().trim()).optional(),
+  schemaMarkup: z.any().optional(),
+  noindex: z.boolean().optional(),
+  nofollow: z.boolean().optional(),
+  tenantId: z.string().trim().min(1).optional()
+});
+
+const analyticsEvent = z.object({
+  type: z.string().trim().min(1),
+  resourceType: z.string().trim().optional(),
+  resourceId: z.string().trim().optional(),
+  channel: z.string().trim().optional(),
+  note: z.string().trim().optional(),
+  metrics: z.any().optional(),
+  tenantId: z.string().trim().min(1).optional()
+});
+
+const pageLayoutUpsert = z.object({
+  title: z.string().trim().optional(),
+  theme: z.string().trim().optional(),
+  note: z.string().trim().optional(),
+  blocks: z.array(z.any()).optional(),
+  widgets: z.array(z.any()).optional(),
+  tenantId: z.string().trim().min(1).optional()
+});
+
+const aiProviderCreate = z.object({
+  name: z.string().trim().optional(),
+  provider: z.string().trim().optional(),
+  model: z.string().trim().optional(),
+  apiBase: z.string().trim().optional(),
+  note: z.string().trim().optional(),
+  tenantId: z.string().trim().min(1).optional()
+});
+
+const aiObservationCreate = z.object({
+  kind: z.string().trim().optional(),
+  message: z.string().trim().optional(),
+  resourceType: z.string().trim().optional(),
+  resourceId: z.string().trim().optional(),
+  tenantId: z.string().trim().min(1).optional()
+});
+
+const aiWebFetchRequest = z.object({
+  url: z.string().trim().url(),
+  note: z.string().trim().optional(),
+  tenantId: z.string().trim().min(1).optional()
+});
+
 module.exports = {
   schemas: {
     capabilityListQuery,
@@ -292,7 +350,13 @@ module.exports = {
     inventoryId,
     authLogin,
     authRefresh,
-    authLogout
+    authLogout,
+    seoProfileUpsert,
+    analyticsEvent,
+    pageLayoutUpsert,
+    aiProviderCreate,
+    aiObservationCreate,
+    aiWebFetchRequest
   },
   constants: {
     INVENTORY_CONDITIONS,
