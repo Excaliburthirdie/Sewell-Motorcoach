@@ -73,3 +73,42 @@ describe('inventoryService VIN uniqueness', () => {
     expect(result.unit.tenantId).toBe('lexington');
   });
 });
+
+describe('inventoryService importCsv', () => {
+  beforeEach(() => {
+    jest.spyOn(persist, 'inventory').mockImplementation(() => {});
+    datasets.inventory = [];
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('parses extended fields and media lists', () => {
+    const csv = [
+      'stockNumber,vin,name,condition,price,fees,rebates,images,floorplans,virtualTours,videoLinks,holdUntil,year,length,weight,chassis,description,metaTitle,metaDescription',
+      'STK-9,VIN-999,Flagship,new,200000,500,1000,https://ex.com/a.jpg|https://ex.com/b.jpg,https://ex.com/fp.pdf,https://ex.com/vr,https://ex.com/vid,2024-01-01,2024,40,15000,Spartan,Premium coach,Great title,Meta description'
+    ].join('\n');
+
+    const result = inventoryService.importCsv(csv, 'main');
+
+    expect(result.errors).toHaveLength(0);
+    expect(result.created).toHaveLength(1);
+    const unit = result.created[0];
+    expect(unit.images).toEqual([
+      'https://ex.com/a.jpg',
+      'https://ex.com/b.jpg'
+    ]);
+    expect(unit.floorplans).toEqual(['https://ex.com/fp.pdf']);
+    expect(unit.virtualTours).toEqual(['https://ex.com/vr']);
+    expect(unit.videoLinks).toEqual(['https://ex.com/vid']);
+    expect(unit.year).toBe(2024);
+    expect(unit.length).toBe(40);
+    expect(unit.weight).toBe(15000);
+    expect(unit.chassis).toBe('Spartan');
+    expect(unit.description).toBe('Premium coach');
+    expect(unit.metaTitle).toBe('Great title');
+    expect(unit.metaDescription).toBe('Meta description');
+    expect(unit.holdUntil).toContain('2024-01-01');
+  });
+});

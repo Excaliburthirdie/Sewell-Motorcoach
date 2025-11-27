@@ -122,6 +122,11 @@ Unauthorized or insufficient roles return a `403` error with a structured machin
 - **Legacy automation.** Service-to-service calls can still use the static bearer token (`API_KEY`) when configured, but
   browser clients should prefer JWT + CSRF for session safety.
 
+### Bulk inventory import runbook
+
+A step-by-step import guide (CSV layout, authentication flow, and troubleshooting) is available in
+[`docs/import-runbook.md`](docs/import-runbook.md).
+
 ### Validation, errors and observability
 
 - **Schema-first validation.** Every request body, query and route parameter is
