@@ -66,7 +66,11 @@ const datasets = {
   financeOffers: normalizeTenantedCollection(loadData('financeOffers.json', [])),
   users: normalizeTenantedCollection(loadData('users.json', [])),
   refreshTokens: normalizeTenantedCollection(loadData('refreshTokens.json', [])),
-  revokedRefreshTokens: normalizeTenantedCollection(loadData('revokedRefreshTokens.json', []))
+  revokedRefreshTokens: normalizeTenantedCollection(loadData('revokedRefreshTokens.json', [])),
+  seoProfiles: normalizeTenantedCollection(loadData('seoProfiles.json', [])),
+  analytics: loadData('analytics.json', { events: [] }),
+  pageLayouts: normalizeTenantedCollection(loadData('pageLayouts.json', [])),
+  aiControl: loadData('aiControl.json', { providers: [], agents: [], observations: [], webFetches: [] })
 };
 
 const persist = {
@@ -84,7 +88,11 @@ const persist = {
   users: data => saveData('users.json', data),
   refreshTokens: data => saveData('refreshTokens.json', data),
   revokedRefreshTokens: data => saveData('revokedRefreshTokens.json', data),
-  tenants: data => saveData('tenants.json', data)
+  tenants: data => saveData('tenants.json', data),
+  seoProfiles: data => saveData('seoProfiles.json', data),
+  analytics: data => saveData('analytics.json', data),
+  pageLayouts: data => saveData('pageLayouts.json', data),
+  aiControl: data => saveData('aiControl.json', data)
 };
 
 module.exports = {

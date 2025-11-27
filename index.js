@@ -20,6 +20,10 @@ const serviceTicketService = require('./src/services/serviceTicketService');
 const financeOfferService = require('./src/services/financeOfferService');
 const authService = require('./src/services/authService');
 const { datasets } = require('./src/services/state');
+const seoService = require('./src/services/seoService');
+const analyticsService = require('./src/services/analyticsService');
+const pageLayoutService = require('./src/services/pageLayoutService');
+const aiService = require('./src/services/aiService');
 const tenantService = require('./src/services/tenantService');
 const { validateBody, validateParams, validateQuery } = require('./src/middleware/validation');
 const { schemas } = require('./src/validation/schemas');
@@ -497,6 +501,31 @@ api.delete('/content/:id', requireAuth, authorize(['admin', 'marketing']), (req,
   res.status(204).send();
 });
 
+api.get('/content/:id/layout', requireAuth, authorize(['admin', 'marketing']), validateParams(schemas.idParam), (req, res, next) => {
+  const layout = pageLayoutService.getByPage(req.params.id, req.tenant.id);
+  if (!layout) return next(new AppError('NOT_FOUND', 'Layout not found for content page', 404));
+  res.json(layout);
+});
+
+api.post(
+  '/content/:id/layout',
+  requireAuth,
+  authorize(['admin', 'marketing']),
+  validateParams(schemas.idParam),
+  validateBody(schemas.pageLayoutUpsert),
+  (req, res, next) => {
+    const result = pageLayoutService.saveDraft(req.params.id, req.validated.body, req.tenant.id);
+    if (result.error) return next(new AppError('VALIDATION_ERROR', result.error, 400));
+    res.status(201).json(result.layout);
+  }
+);
+
+api.post('/content/:id/layout/publish', requireAuth, authorize(['admin', 'marketing']), validateParams(schemas.idParam), (req, res, next) => {
+  const result = pageLayoutService.publish(req.params.id, req.tenant.id);
+  if (result.notFound) return next(new AppError('NOT_FOUND', 'Layout not found for content page', 404));
+  res.json(result.layout);
+});
+
 api.patch('/inventory/:id/feature', requireAuth, authorize(['admin', 'sales']), (req, res, next) => {
   const result = inventoryService.setFeatured(req.params.id, req.body.featured, req.tenant.id);
   if (result.notFound) return next(new AppError('NOT_FOUND', 'Inventory not found', 404));
@@ -509,6 +538,22 @@ api.delete('/inventory/:id', requireAuth, authorize(['admin']), (req, res, next)
   if (result.notFound) return next(new AppError('NOT_FOUND', 'Inventory not found', 404));
   auditChange(req, 'delete', 'inventory', result.unit);
   res.status(204).send();
+});
+
+api.get('/seo/profiles', requireAuth, authorize(['admin', 'marketing']), (req, res) => {
+  const { resourceType, resourceId } = req.query;
+  res.json(seoService.list({ resourceType, resourceId }, req.tenant.id));
+});
+
+api.post('/seo/profiles', requireAuth, authorize(['admin', 'marketing']), validateBody(schemas.seoProfileUpsert), (req, res, next) => {
+  const result = seoService.upsert(req.validated.body, req.tenant.id);
+  if (result.error) return next(new AppError('VALIDATION_ERROR', result.error, 400));
+  res.status(201).json(result.profile);
+});
+
+api.post('/seo/autofill', requireAuth, authorize(['admin', 'marketing']), (req, res) => {
+  const result = seoService.autofillMissing(req.tenant.id);
+  res.json(result);
 });
 
 api.get('/leads', requireAuth, authorize(['admin', 'sales', 'marketing']), validateQuery(schemas.leadListQuery), (req, res) => {
@@ -720,6 +765,42 @@ api.get('/sitemap', (req, res) => {
     generatedAt: new Date().toISOString(),
     entries: [...inventory, ...pages]
   });
+});
+
+api.post('/analytics/events', validateBody(schemas.analyticsEvent), (req, res) => {
+  const result = analyticsService.recordEvent(req.validated.body, req.validated.body.tenantId || req.tenant.id);
+  res.status(201).json(result.event);
+});
+
+api.get('/analytics/dashboard', requireAuth, authorize(['admin', 'marketing']), (req, res) => {
+  res.json(analyticsService.dashboard(req.tenant.id));
+});
+
+api.get('/ai/providers', requireAuth, authorize(['admin', 'marketing']), (req, res) => {
+  res.json(aiService.listProviders(req.tenant.id));
+});
+
+api.post('/ai/providers', requireAuth, authorize(['admin', 'marketing']), validateBody(schemas.aiProviderCreate), (req, res) => {
+  const result = aiService.registerProvider(req.validated.body, req.validated.body.tenantId || req.tenant.id);
+  res.status(201).json(result.provider);
+});
+
+api.post('/ai/observe', validateBody(schemas.aiObservationCreate), (req, res) => {
+  const result = aiService.recordObservation(req.validated.body, req.validated.body.tenantId || req.tenant.id);
+  res.status(201).json(result.observation);
+});
+
+api.get('/ai/suggestions', requireAuth, authorize(['admin', 'marketing', 'sales']), (req, res) => {
+  res.json(aiService.aiSuggestions(req.tenant.id));
+});
+
+api.post('/ai/web-fetch', requireAuth, authorize(['admin', 'marketing']), validateBody(schemas.aiWebFetchRequest), async (req, res) => {
+  const result = await aiService.performWebFetch(req.validated.body.url, req.validated.body.tenantId || req.tenant.id, req.validated.body.note);
+  res.status(201).json(result.fetch);
+});
+
+api.get('/ai/web-fetch', requireAuth, authorize(['admin', 'marketing']), (req, res) => {
+  res.json(aiService.listWebFetches(req.tenant.id));
 });
 
 api.get('/metrics', (req, res) => {

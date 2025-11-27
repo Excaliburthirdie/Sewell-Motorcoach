@@ -28,6 +28,10 @@ module.exports = {
       .map(method => method.trim().toUpperCase())
       .filter(Boolean)
   },
+  ai: {
+    enableWebFetch: process.env.AI_WEB_FETCH === 'true',
+    fetchTimeoutMs: Number(process.env.AI_FETCH_TIMEOUT_MS || 7000)
+  },
   tenancy: {
     defaultTenantId: process.env.DEFAULT_TENANT_ID || 'main'
   },
