@@ -3,7 +3,7 @@ const bodyParser = require('body-parser');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
-const { v4: uuidv4 } = require('uuid');
+const { randomUUID } = require('node:crypto');
 
 const config = require('./src/config');
 const { DATA_DIR } = require('./src/persistence/store');
@@ -105,7 +105,7 @@ app.use((req, res, next) => {
 
 // Core middleware stack ----------------------------------------------------
 app.use((req, res, next) => {
-  const requestId = req.headers['x-request-id'] || uuidv4();
+  const requestId = req.headers['x-request-id'] || randomUUID();
   req.requestId = requestId;
   res.set('X-Request-Id', requestId);
   next();

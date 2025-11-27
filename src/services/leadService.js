@@ -1,4 +1,4 @@
-const { v4: uuidv4 } = require('uuid');
+const { randomUUID } = require('node:crypto');
 const fs = require('fs');
 const { datasets, persist } = require('./state');
 const { DATA_DIR } = require('../persistence/store');
@@ -73,7 +73,7 @@ function create(payload, tenantId) {
 
   const lead = attachTenant(
     {
-      id: uuidv4(),
+      id: randomUUID(),
       createdAt: new Date().toISOString(),
       ...body,
       status,

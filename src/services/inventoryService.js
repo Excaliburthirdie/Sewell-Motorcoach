@@ -1,4 +1,4 @@
-const { v4: uuidv4 } = require('uuid');
+const { randomUUID } = require('node:crypto');
 const { datasets, persist } = require('./state');
 const { clampNumber, escapeOutputPayload, sanitizeBoolean, sanitizeString, validateFields } = require('./shared');
 const { attachTenant, matchesTenant, normalizeTenantId } = require('./tenantService');
@@ -189,7 +189,7 @@ function create(payload, tenantId) {
 
   const unit = attachTenant(
     {
-      id: uuidv4(),
+      id: randomUUID(),
       featured: sanitizeBoolean(payload.featured, false),
       createdAt: new Date().toISOString(),
       images: Array.isArray(payload.images) ? payload.images : [],

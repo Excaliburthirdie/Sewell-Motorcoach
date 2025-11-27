@@ -1,4 +1,4 @@
-const { v4: uuidv4 } = require('uuid');
+const { randomUUID } = require('node:crypto');
 const { datasets, persist } = require('./state');
 const { sanitizePayloadStrings, validateFields } = require('./shared');
 const { attachTenant, matchesTenant, normalizeTenantId } = require('./tenantService');
@@ -22,7 +22,7 @@ function create(payload, tenantId) {
     return { error: requiredError };
   }
   const body = sanitizePayloadStrings(payload, ['name', 'role', 'bio']);
-  const team = attachTenant({ id: uuidv4(), ...body }, tenantId);
+  const team = attachTenant({ id: randomUUID(), ...body }, tenantId);
   datasets.teams.push(team);
   persist.teams(datasets.teams);
   return { team };
