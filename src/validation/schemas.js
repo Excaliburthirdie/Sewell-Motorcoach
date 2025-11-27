@@ -2,6 +2,7 @@ const { z } = require('./zodLite');
 const { VALID_LEAD_STATUSES } = require('../services/leadService');
 const { CONTACT_METHODS } = require('../services/customerService');
 const { VALID_TICKET_STATUSES } = require('../services/serviceTicketService');
+const { ALLOWED_EVENTS } = require('../services/webhookService');
 
 const INVENTORY_CONDITIONS = ['new', 'used', 'demo', 'pending_sale'];
 const TRANSFER_STATUSES = ['none', 'requested', 'in_transit', 'arrived'];
@@ -316,6 +317,43 @@ const aiWebFetchRequest = z.object({
   tenantId: z.string().trim().min(1).optional()
 });
 
+const webhookCreate = z.object({
+  url: z.string().trim().url(),
+  description: z.string().trim().optional(),
+  eventTypes: z.array(z.enum(ALLOWED_EVENTS)).optional(),
+  headers: z.any().optional(),
+  secret: z.string().trim().optional(),
+  active: z.boolean().optional(),
+  tenantId: z.string().trim().min(1).optional()
+});
+
+const webhookUpdate = webhookCreate.partial();
+
+const webhookDeliveryQuery = z.object({
+  webhookId: z.string().trim().optional(),
+  eventType: z.enum(ALLOWED_EVENTS).optional(),
+  limit: z.union([z.number(), z.string()]).optional().transform(val => (val === undefined ? 50 : Number(val)))
+});
+
+const webhookListQuery = z.object({
+  eventType: z.enum(ALLOWED_EVENTS).optional(),
+  active: z
+    .union([z.boolean(), z.string()])
+    .optional()
+    .transform(val => {
+      if (val === undefined) return undefined;
+      if (typeof val === 'boolean') return val;
+      return val.toLowerCase() === 'true';
+    })
+});
+
+const auditLogQuery = z.object({
+  tenantId: z.string().trim().optional(),
+  entity: z.string().trim().optional(),
+  since: z.string().trim().optional(),
+  limit: z.union([z.number(), z.string()]).optional().transform(val => (val === undefined ? 100 : Number(val)))
+});
+
 module.exports = {
   schemas: {
     capabilityListQuery,
@@ -356,7 +394,12 @@ module.exports = {
     pageLayoutUpsert,
     aiProviderCreate,
     aiObservationCreate,
-    aiWebFetchRequest
+    aiWebFetchRequest,
+    webhookCreate,
+    webhookUpdate,
+    webhookListQuery,
+    webhookDeliveryQuery,
+    auditLogQuery
   },
   constants: {
     INVENTORY_CONDITIONS,

@@ -25,6 +25,9 @@ const analyticsService = require('./src/services/analyticsService');
 const pageLayoutService = require('./src/services/pageLayoutService');
 const aiService = require('./src/services/aiService');
 const tenantService = require('./src/services/tenantService');
+const webhookService = require('./src/services/webhookService');
+const auditLogService = require('./src/services/auditLogService');
+const exportService = require('./src/services/exportService');
 const { validateBody, validateParams, validateQuery } = require('./src/middleware/validation');
 const { schemas } = require('./src/validation/schemas');
 const { AppError, errorHandler } = require('./src/middleware/errors');
@@ -439,6 +442,7 @@ api.post('/inventory', requireAuth, authorize(['admin', 'sales']), validateBody(
   if (result.error) return next(new AppError('VALIDATION_ERROR', result.error, 400));
   if (result.conflict) return next(new AppError('CONFLICT', result.conflict, 409));
   auditChange(req, 'create', 'inventory', result.unit);
+  webhookService.trigger('inventory.created', result.unit, req.tenant.id);
   res.status(201).json(result.unit);
 });
 
@@ -450,6 +454,7 @@ api.put('/inventory/:id', requireAuth, authorize(['admin', 'sales']), validateBo
   if (result.pricingChanges?.length) {
     auditChange(req, 'price_change', 'inventory', { id: result.unit.id, changes: result.pricingChanges });
   }
+  webhookService.trigger('inventory.updated', result.unit, req.tenant.id);
   res.json(result.unit);
 });
 
@@ -569,6 +574,7 @@ api.get('/leads/:id', requireAuth, authorize(['admin', 'sales', 'marketing']), (
 api.post('/leads', validateBody(schemas.leadCreate), (req, res, next) => {
   const result = leadService.create(req.validated.body, req.tenant.id);
   if (result.error) return next(new AppError('VALIDATION_ERROR', result.error, 400));
+  webhookService.trigger('lead.created', result.lead, req.tenant.id);
   res.status(201).json(result.lead);
 });
 
@@ -576,6 +582,7 @@ api.put('/leads/:id', requireAuth, authorize(['admin', 'sales', 'marketing']), v
   const result = leadService.update(req.params.id, req.validated.body, req.tenant.id);
   if (result.notFound) return next(new AppError('NOT_FOUND', 'Lead not found', 404));
   if (result.error) return next(new AppError('VALIDATION_ERROR', result.error, 400));
+  webhookService.trigger('lead.updated', result.lead, req.tenant.id);
   res.json(result.lead);
 });
 
@@ -583,6 +590,7 @@ api.patch('/leads/:id/status', requireAuth, authorize(['admin', 'sales', 'market
   const result = leadService.setStatus(req.params.id, req.body.status, req.tenant.id);
   if (result.notFound) return next(new AppError('NOT_FOUND', 'Lead not found', 404));
   if (result.error) return next(new AppError('VALIDATION_ERROR', result.error, 400));
+  webhookService.trigger('lead.updated', result.lead, req.tenant.id);
   res.json(result.lead);
 });
 
@@ -605,6 +613,7 @@ api.get('/customers/:id', requireAuth, authorize(['admin', 'sales', 'marketing']
 api.post('/customers', requireAuth, authorize(['admin', 'sales', 'marketing']), validateBody(schemas.customerCreate), (req, res, next) => {
   const result = customerService.create(req.validated.body, req.tenant.id);
   if (result.error) return next(new AppError('VALIDATION_ERROR', result.error, 400));
+  webhookService.trigger('customer.created', result.customer, req.tenant.id);
   res.status(201).json(result.customer);
 });
 
@@ -634,6 +643,7 @@ api.get('/service-tickets/:id', requireAuth, authorize(['admin', 'sales']), (req
 api.post('/service-tickets', requireAuth, authorize(['admin', 'sales']), validateBody(schemas.serviceTicketCreate), (req, res, next) => {
   const result = serviceTicketService.create(req.validated.body, req.tenant.id);
   if (result.error) return next(new AppError('VALIDATION_ERROR', result.error, 400));
+  webhookService.trigger('service-ticket.created', result.ticket, req.tenant.id);
   res.status(201).json(result.ticket);
 });
 
@@ -663,12 +673,14 @@ api.get('/finance-offers/:id', (req, res, next) => {
 api.post('/finance-offers', requireAuth, authorize(['admin', 'marketing']), validateBody(schemas.financeOfferCreate), (req, res, next) => {
   const result = financeOfferService.create(req.validated.body, req.tenant.id);
   if (result.error) return next(new AppError('VALIDATION_ERROR', result.error, 400));
+  webhookService.trigger('finance-offer.updated', result.offer, req.tenant.id);
   res.status(201).json(result.offer);
 });
 
 api.put('/finance-offers/:id', requireAuth, authorize(['admin', 'marketing']), validateBody(schemas.financeOfferUpdate), (req, res, next) => {
   const result = financeOfferService.update(req.params.id, req.validated.body, req.tenant.id);
   if (result.notFound) return next(new AppError('NOT_FOUND', 'Finance offer not found', 404));
+  webhookService.trigger('finance-offer.updated', result.offer, req.tenant.id);
   res.json(result.offer);
 });
 
@@ -801,6 +813,49 @@ api.post('/ai/web-fetch', requireAuth, authorize(['admin', 'marketing']), valida
 
 api.get('/ai/web-fetch', requireAuth, authorize(['admin', 'marketing']), (req, res) => {
   res.json(aiService.listWebFetches(req.tenant.id));
+});
+
+api.get('/webhooks', requireAuth, authorize(['admin', 'marketing']), validateQuery(schemas.webhookListQuery), (req, res) => {
+  res.json(webhookService.list(req.validated.query, req.tenant.id));
+});
+
+api.get('/webhooks/deliveries', requireAuth, authorize(['admin', 'marketing']), validateQuery(schemas.webhookDeliveryQuery), (
+req, res) => {
+  res.json(webhookService.deliveries(req.validated.query, req.tenant.id));
+});
+
+api.post('/webhooks', requireAuth, authorize(['admin', 'marketing']), validateBody(schemas.webhookCreate), (req, res) => {
+  const result = webhookService.create(req.validated.body, req.validated.body.tenantId || req.tenant.id);
+  res.status(201).json(result.webhook);
+});
+
+api.put('/webhooks/:id', requireAuth, authorize(['admin', 'marketing']), validateBody(schemas.webhookUpdate), (req, res, next)
+ => {
+  const result = webhookService.update(req.params.id, req.validated.body, req.tenant.id);
+  if (result.notFound) return next(new AppError('NOT_FOUND', 'Webhook not found', 404));
+  res.json(result.webhook);
+});
+
+api.delete('/webhooks/:id', requireAuth, authorize(['admin', 'marketing']), (req, res, next) => {
+  const result = webhookService.remove(req.params.id, req.tenant.id);
+  if (result.notFound) return next(new AppError('NOT_FOUND', 'Webhook not found', 404));
+  res.status(204).send();
+});
+
+api.get('/audit/logs', requireAuth, authorize(['admin']), validateQuery(schemas.auditLogQuery), (req, res) => {
+  res.json(auditLogService.list(req.validated.query));
+});
+
+api.get('/exports/snapshot', requireAuth, authorize(['admin']), (req, res) => {
+  const result = exportService.generateCompressedSnapshot(req.tenant.id);
+  res.json({
+    fileName: result.fileName,
+    sizeBytes: result.sizeBytes,
+    generatedAt: result.snapshot.generatedAt,
+    counts: result.snapshot.counts,
+    tenantId: req.tenant.id,
+    note: 'Snapshot compressed and stored on server. Download by reading file path from response.'
+  });
 });
 
 api.get('/metrics', (req, res) => {

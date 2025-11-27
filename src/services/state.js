@@ -70,7 +70,9 @@ const datasets = {
   seoProfiles: normalizeTenantedCollection(loadData('seoProfiles.json', [])),
   analytics: loadData('analytics.json', { events: [] }),
   pageLayouts: normalizeTenantedCollection(loadData('pageLayouts.json', [])),
-  aiControl: loadData('aiControl.json', { providers: [], agents: [], observations: [], webFetches: [] })
+  aiControl: loadData('aiControl.json', { providers: [], agents: [], observations: [], webFetches: [] }),
+  webhooks: normalizeTenantedCollection(loadData('webhooks.json', [])),
+  webhookDeliveries: normalizeTenantedCollection(loadData('webhookDeliveries.json', []))
 };
 
 const persist = {
@@ -92,7 +94,9 @@ const persist = {
   seoProfiles: data => saveData('seoProfiles.json', data),
   analytics: data => saveData('analytics.json', data),
   pageLayouts: data => saveData('pageLayouts.json', data),
-  aiControl: data => saveData('aiControl.json', data)
+  aiControl: data => saveData('aiControl.json', data),
+  webhooks: data => saveData('webhooks.json', data),
+  webhookDeliveries: data => saveData('webhookDeliveries.json', data)
 };
 
 module.exports = {
