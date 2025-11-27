@@ -3,7 +3,9 @@ module.exports = {
   server: {
     port: Number(process.env.PORT || 3000),
     enforceHttps: process.env.ENFORCE_HTTPS === 'true',
-    hstsMaxAgeSeconds: Number(process.env.HSTS_MAX_AGE_SECONDS || 31536000)
+    hstsMaxAgeSeconds: Number(process.env.HSTS_MAX_AGE_SECONDS || 31536000),
+    jsonLimitMb: Number(process.env.JSON_BODY_LIMIT_MB || 1),
+    compressionEnabled: process.env.COMPRESSION_ENABLED !== 'false'
   },
   auth: {
     apiKey: process.env.API_KEY || process.env.ADMIN_API_KEY,
