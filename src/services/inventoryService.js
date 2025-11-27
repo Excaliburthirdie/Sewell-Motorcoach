@@ -1,4 +1,4 @@
-const { v4: uuidv4 } = require('uuid');
+const { randomUUID } = require('node:crypto');
 const { datasets, persist } = require('./state');
 const { clampNumber, escapeOutputPayload, sanitizeBoolean, sanitizeString, validateFields } = require('./shared');
 const { attachTenant, matchesTenant, normalizeTenantId } = require('./tenantService');
@@ -7,6 +7,21 @@ const {
 } = require('../validation/schemas');
 
 const PRICING_FIELDS = ['price', 'msrp', 'salePrice', 'fees', 'taxes', 'rebates'];
+
+const parseList = value => {
+  if (!value) return [];
+  if (Array.isArray(value)) return value.filter(Boolean).map(sanitizeString);
+  return String(value)
+    .split('|')
+    .map(item => sanitizeString(item))
+    .filter(Boolean);
+};
+
+const parseNumber = value => {
+  if (value === undefined || value === null || value === '') return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+};
 
 function sanitizeCondition(value, fallback) {
   if (!value) return fallback;
@@ -174,7 +189,7 @@ function create(payload, tenantId) {
 
   const unit = attachTenant(
     {
-      id: uuidv4(),
+      id: randomUUID(),
       featured: sanitizeBoolean(payload.featured, false),
       createdAt: new Date().toISOString(),
       images: Array.isArray(payload.images) ? payload.images : [],
@@ -336,12 +351,16 @@ function importCsv(csv, tenantId) {
       vin: row.vin,
       name: row.name,
       condition: row.condition,
-      price: row.price,
-      msrp: row.msrp,
-      salePrice: row.salePrice || row.sale_price,
-      rebates: row.rebates,
-      fees: row.fees,
-      taxes: row.taxes,
+      price: parseNumber(row.price),
+      msrp: parseNumber(row.msrp),
+      salePrice: parseNumber(row.salePrice || row.sale_price),
+      rebates: parseNumber(row.rebates),
+      fees: parseNumber(row.fees),
+      taxes: parseNumber(row.taxes),
+      year: parseNumber(row.year),
+      length: parseNumber(row.length),
+      weight: parseNumber(row.weight),
+      chassis: row.chassis,
       industry: row.industry,
       category: row.category,
       subcategory: row.subcategory,
@@ -350,7 +369,14 @@ function importCsv(csv, tenantId) {
       transferStatus: row.transferStatus || row.transfer_status,
       holdUntil: row.holdUntil || row.hold_until,
       featured: row.featured === 'true',
-      slug: row.slug
+      slug: row.slug,
+      description: row.description,
+      metaTitle: row.metaTitle || row.meta_title,
+      metaDescription: row.metaDescription || row.meta_description,
+      images: parseList(row.images),
+      floorplans: parseList(row.floorplans),
+      virtualTours: parseList(row.virtualTours || row.virtual_tours),
+      videoLinks: parseList(row.videoLinks || row.video_links)
     };
 
     const result = create(payload, tenantId);

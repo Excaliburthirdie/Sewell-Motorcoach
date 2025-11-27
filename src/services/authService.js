@@ -1,5 +1,5 @@
 const crypto = require('crypto');
-const { v4: uuidv4 } = require('uuid');
+const { randomUUID } = require('node:crypto');
 const { sign, verify } = require('./jwt');
 const { datasets, persist } = require('./state');
 const { matchesTenant, normalizeTenantId } = require('./tenantService');
@@ -38,7 +38,7 @@ function generateTokens(user, rotatedFrom) {
     JWT_SECRET,
     { expiresInSeconds: ACCESS_TOKEN_TTL_SECONDS }
   );
-  const jti = uuidv4();
+  const jti = randomUUID();
   const refreshToken = sign({ sub: user.id, type: 'refresh', jti, tenantId: user.tenantId }, JWT_SECRET, {
     expiresInSeconds: REFRESH_TOKEN_TTL_SECONDS
   });

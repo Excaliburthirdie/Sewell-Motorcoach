@@ -7,17 +7,14 @@
     "start": "node index.js",
     "dev": "nodemon index.js",
     "backfill:inventory": "node scripts/backfillInventory.js",
-    "test": "jest"
+    "test": "node --test"
   },
   "dependencies": {
     "express": "^4.18.2",
     "body-parser": "^1.20.1",
-    "cors": "^2.8.5",
-    "uuid": "^9.0.0"
+    "cors": "^2.8.5"
   },
   "devDependencies": {
-    "jest": "^29.7.0",
-    "nodemon": "^2.0.22",
-    "supertest": "^6.3.3"
+    "nodemon": "^2.0.22"
   }
 }

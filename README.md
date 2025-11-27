@@ -122,6 +122,16 @@ Unauthorized or insufficient roles return a `403` error with a structured machin
 - **Legacy automation.** Service-to-service calls can still use the static bearer token (`API_KEY`) when configured, but
   browser clients should prefer JWT + CSRF for session safety.
 
+### Bulk inventory import runbook
+
+A step-by-step import guide (CSV layout, authentication flow, and troubleshooting) is available in
+[`docs/import-runbook.md`](docs/import-runbook.md).
+
+### Testing
+
+- **Unit suite:** Uses Node's built-in test runner. Run `npm test` to execute the fast unit coverage for services.
+- **Integration coverage:** Auth + CSRF integration tests require the Express stack and the optional `supertest` dev dependency. They are skipped by default; install dev dependencies and set `RUN_INTEGRATION_TESTS=true` before `npm test` to enable them.
+
 ### Validation, errors and observability
 
 - **Schema-first validation.** Every request body, query and route parameter is
