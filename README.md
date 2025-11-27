@@ -12,21 +12,32 @@ MongoDB) by replacing the helper functions in `index.js`.
 
 ## Features
 
-- **Inventory management** – create, read, update and delete RV units.
-- **Team (staff) management** – organise staff into teams with members and
-  biographies.
-- **Customer reviews** – store reviews with ratings and visibility flags.
-- **Lead collection** – record submissions from contact forms.
-- **Dealership settings** – update contact information and other config.
-- **Customer CRM** – track buyers with contact preferences and opt-in flags.
-- **Service tickets** – log unit issues, scheduling, technicians and line items.
-- **Finance offers** – manage lender programs and publish current terms.
-- **Complete auth lifecycle** – login, refresh, logout/revoke and `me` profile.
-- **Page experience toolkit** – content page layouts, SEO profiles, analytics events and AI-assisted insights.
+The API is built to mirror a dealership-grade control center. Every resource is scoped to a tenant (location) and guarded by
+JWT-based auth with optional legacy API key support. Highlights include:
 
-Each resource is exposed via a separate REST endpoint.  The API can be
-consumed by a front‑end application or even imported into WordPress via
-HTTP.
+- **Inventory management** – full CRUD, featured toggling, slug lookups, stats rollups, CSV import and pricing change audits.
+- **Team (staff) management** – teams with members, roles and biographies plus CRUD for marketing/admin roles.
+- **Customer reviews** – collect, publish and moderate reviews with ratings and visibility flags.
+- **Lead collection** – unauthenticated lead intake with status updates, assignments and webhook notifications.
+- **Dealership settings** – update location/contact metadata per tenant with admin-only access.
+- **Customer CRM** – track contact preferences, opt-ins and lifecycle details for buyers and prospects.
+- **Service tickets** – log issues with line items, technician info, scheduling and status management.
+- **Finance offers** – manage lender programs and publish current rate/term blocks with marketing/admin permissions.
+- **Content pages & sitemap** – create marketing pages, fetch by slug, export a sitemap, and manage per-page drafts/publishing for
+  page-builder layouts.
+- **SEO management** – store SEO profiles, auto-fill missing records, and scope metadata to any resource.
+- **Analytics & events** – accept analytics events, view dashboard rollups, and emit internal events for metrics aggregation.
+- **AI control center** – register AI providers, capture observations, fetch AI suggestions, and optionally run remote web fetches
+  (gated by `AI_WEB_FETCH`).
+- **Webhooks** – create/update/delete outbound webhooks, list deliveries, and trigger them automatically on key events
+  (inventory, leads, customers, finance offers, service tickets).
+- **Audit logging & exports** – record every mutation to `data/audit.log` and generate compressed tenant snapshots for offline
+  inspection.
+- **Operational safeguards** – CSRF cookies/headers, rate limiting, input sanitization, HSTS enforcement, gzip compression,
+  per-route metrics, login backoff, and structured JSON logging with request correlation IDs.
+
+Each resource is exposed via a dedicated REST endpoint. The API can be consumed by a front‑end application, fed into WordPress,
+or integrated with automation platforms via webhooks and exports.
 
 ## Getting started
 
@@ -66,10 +77,8 @@ HTTP.
 
 ### Endpoints
 
-All endpoints are available both at the root and under `/v1` for versioned
-consumption. Protected requests now support JWT-based authentication with
-refresh token rotation while still honoring the legacy static bearer token
-(`API_KEY`) for compatibility.
+All endpoints are available both at the root and under `/v1` for versioned consumption. Protected requests use JWT bearer tokens
+with refresh rotation, while the static bearer token (`API_KEY`) remains for service-to-service compatibility.
 
 ### Authentication & session lifecycle
 
@@ -153,61 +162,94 @@ A step-by-step import guide (CSV layout, authentication flow, and troubleshootin
 - **HTTPS enforcement.** When `ENFORCE_HTTPS=true`, the API rejects downgraded
   traffic and sends HSTS headers (`Strict-Transport-Security`) with the
   configured max-age for secure deployments.
-consumption.  Mutating requests (POST/PUT/PATCH/DELETE) can optionally be
-protected with a static bearer token by setting the `API_KEY` environment
-variable before starting the server.
+- **CSRF protection.** Clients receive a `csrfToken` cookie + header and must echo them for state-changing requests, including
+  refresh token rotation.
+- **Input sanitization.** Requests are sanitized to strip control characters and dangerous strings before validation.
+- **Optional API key.** Legacy automations can still use the static bearer token (`API_KEY`) in lieu of JWT if configured.
+- **Compression and perf.** Responses are gzipped when supported, and per-route metrics summarize latency and status counts.
+- **Abuse safeguards.** Login attempts apply exponential backoff, and every mutation writes to `data/audit.log` with masked
+  sensitive fields.
 
-| Method | Endpoint               | Purpose                                      |
-|-------:|------------------------|----------------------------------------------|
-|  POST  | `/auth/login`          | Obtain JWT access and refresh tokens         |
-|  POST  | `/auth/refresh`        | Rotate refresh token and get new access      |
-|  POST  | `/auth/logout`         | Revoke a refresh token and clear cookies     |
-|  GET   | `/auth/me`             | Return the authenticated principal           |
-|  GET   | `/inventory`           | List all inventory units                     |
-|  GET   | `/inventory/stats`     | Aggregate inventory stats per tenant         |
-|  GET   | `/inventory/:id`       | Retrieve a single unit by ID                 |
-|  GET   | `/inventory/slug/:slug`| Retrieve a single unit by slug               |
-|  POST  | `/inventory`           | Create a new unit                            |
-|  POST  | `/inventory/import`    | Bulk import inventory from CSV               |
-|  PUT   | `/inventory/:id`       | Update an existing unit                      |
-|  DELETE| `/inventory/:id`       | Delete a unit                                |
-|  GET   | `/teams`               | List all staff teams                         |
-|  GET   | `/teams/:id`           | Retrieve a team by ID                        |
-|  POST  | `/teams`               | Create a new team                            |
-|  PUT   | `/teams/:id`           | Update a team                                |
-|  DELETE| `/teams/:id`           | Delete a team                                |
-|  GET   | `/reviews`             | List all reviews                             |
-|  GET   | `/reviews/:id`         | Retrieve a review by ID                      |
-|  POST  | `/reviews`             | Add a new review                             |
-|  PUT   | `/reviews/:id`         | Update a review                              |
-|  DELETE| `/reviews/:id`         | Delete a review                              |
-|  GET   | `/customers`           | List customers with pagination and filters   |
-|  GET   | `/customers/:id`       | Retrieve a customer by ID                    |
-|  POST  | `/customers`           | Create a new customer record                 |
-|  PUT   | `/customers/:id`       | Update a customer record                     |
-|  DELETE| `/customers/:id`       | Delete a customer (admin only)               |
-|  GET   | `/capabilities`        | List all 100 best-in-class capabilities      |
-|  GET   | `/capabilities/:id`    | Retrieve a specific capability by ID         |
-|  GET   | `/capabilities/status` | Report aggregate implementation status       |
-|  GET   | `/leads`               | List all leads                               |
-|  GET   | `/leads/:id`           | Retrieve a lead by ID                        |
-|  POST  | `/leads`               | Record a new lead submission                 |
-|  PUT   | `/leads/:id`           | Update a lead                                |
-|  DELETE| `/leads/:id`           | Delete a lead                                |
-|  GET   | `/service-tickets`     | List service tickets with status filters     |
-|  GET   | `/service-tickets/:id` | Retrieve a service ticket by ID              |
-|  POST  | `/service-tickets`     | Create a new service ticket                  |
-|  PUT   | `/service-tickets/:id` | Update a service ticket                      |
-|  DELETE| `/service-tickets/:id` | Delete a service ticket                      |
-|  GET   | `/finance-offers`      | List lender offers with pagination           |
-|  GET   | `/finance-offers/:id`  | Retrieve a finance offer by ID               |
-|  POST  | `/finance-offers`      | Create a finance offer (admin/marketing)     |
-|  PUT   | `/finance-offers/:id`  | Update a finance offer                       |
-|  DELETE| `/finance-offers/:id`  | Delete a finance offer                       |
-|  GET   | `/settings`            | Retrieve dealership settings                 |
-|  PUT   | `/settings`            | Update dealership settings                   |
-|  GET   | `/health`              | Health check with uptime and request ID      |
-|  GET   | `/metrics`             | Lightweight resource metrics                 |
+| Method | Endpoint                           | Purpose                                                        |
+|-------:|------------------------------------|----------------------------------------------------------------|
+|  POST  | `/auth/login`                      | Obtain JWT access/refresh tokens and CSRF token                |
+|  POST  | `/auth/refresh`                    | Rotate refresh token and get new access token                  |
+|  POST  | `/auth/logout`                     | Revoke a refresh token and clear cookies                       |
+|  GET   | `/auth/me`                         | Return the authenticated principal                             |
+|   GET  | `/capabilities`                    | List all 100 best-in-class capabilities                        |
+|   GET  | `/capabilities/:id`                | Retrieve a capability by ID                                    |
+|   GET  | `/capabilities/status`             | Report implementation status for the capability checklist      |
+|   GET  | `/inventory`                       | List all inventory units with filters                          |
+|   GET  | `/inventory/stats`                 | Aggregate inventory stats per tenant                           |
+|   GET  | `/inventory/:id`                   | Retrieve a single unit by ID                                   |
+|   GET  | `/inventory/slug/:slug`            | Retrieve a single unit by slug                                 |
+|   POST | `/inventory`                       | Create a new unit (admin/sales)                                |
+|   POST | `/inventory/import`                | Bulk import inventory from CSV (admin/sales)                   |
+|   PUT  | `/inventory/:id`                   | Update an existing unit (admin/sales)                          |
+|  PATCH | `/inventory/:id/feature`           | Toggle featured flag (admin/sales)                             |
+| DELETE | `/inventory/:id`                   | Delete a unit (admin)                                          |
+|   GET  | `/content`                         | List content pages                                             |
+|   GET  | `/content/:id`                     | Retrieve a content page by ID                                  |
+|   GET  | `/content/slug/:slug`              | Retrieve a content page by slug                                |
+|   POST | `/content`                         | Create a content page (admin/marketing)                        |
+|   PUT  | `/content/:id`                     | Update a content page (admin/marketing)                        |
+| DELETE | `/content/:id`                     | Delete a content page (admin/marketing)                        |
+|   GET  | `/content/:id/layout`              | Retrieve layout draft/published blocks (admin/marketing)       |
+|   POST | `/content/:id/layout`              | Save a layout draft (admin/marketing)                          |
+|   POST | `/content/:id/layout/publish`      | Publish a saved layout draft (admin/marketing)                 |
+|   GET  | `/seo/profiles`                    | List SEO profiles for a resource (admin/marketing)             |
+|   POST | `/seo/profiles`                    | Upsert a SEO profile (admin/marketing)                         |
+|   POST | `/seo/autofill`                    | Auto-create missing SEO profiles (admin/marketing)             |
+|   GET  | `/leads`                           | List leads with filters (admin/sales/marketing)                |
+|   GET  | `/leads/:id`                       | Retrieve a lead by ID (admin/sales/marketing)                  |
+|   POST | `/leads`                           | Record a new lead submission                                   |
+|   PUT  | `/leads/:id`                       | Update lead details (admin/sales/marketing)                    |
+|  PATCH | `/leads/:id/status`                | Update lead status (admin/sales/marketing)                     |
+| DELETE | `/leads/:id`                       | Delete a lead (admin/marketing)                                |
+|   GET  | `/customers`                       | List customers with pagination/filters (admin/sales/marketing) |
+|   GET  | `/customers/:id`                   | Retrieve a customer by ID (admin/sales/marketing)              |
+|   POST | `/customers`                       | Create a customer (admin/sales/marketing)                      |
+|   PUT  | `/customers/:id`                   | Update a customer (admin/sales/marketing)                      |
+| DELETE | `/customers/:id`                   | Delete a customer (admin)                                      |
+|   GET  | `/service-tickets`                 | List service tickets with status filters (admin/sales)         |
+|   GET  | `/service-tickets/:id`             | Retrieve a service ticket by ID (admin/sales)                  |
+|   POST | `/service-tickets`                 | Create a service ticket (admin/sales)                          |
+|   PUT  | `/service-tickets/:id`             | Update a service ticket (admin/sales)                          |
+| DELETE | `/service-tickets/:id`             | Delete a service ticket (admin)                                |
+|   GET  | `/finance-offers`                  | List lender offers with pagination                             |
+|   GET  | `/finance-offers/:id`              | Retrieve a finance offer by ID                                 |
+|   POST | `/finance-offers`                  | Create a finance offer (admin/marketing)                       |
+|   PUT  | `/finance-offers/:id`              | Update a finance offer (admin/marketing)                       |
+| DELETE | `/finance-offers/:id`              | Delete a finance offer (admin)                                 |
+|   GET  | `/teams`                           | List staff teams                                               |
+|   POST | `/teams`                           | Create a team (admin)                                          |
+|   PUT  | `/teams/:id`                       | Update a team (admin)                                          |
+| DELETE | `/teams/:id`                       | Delete a team (admin)                                          |
+|   GET  | `/reviews`                         | List reviews                                                   |
+|   POST | `/reviews`                         | Add a review                                                   |
+|   PUT  | `/reviews/:id`                     | Update a review (admin/sales)                                  |
+| DELETE | `/reviews/:id`                     | Delete a review (admin/sales)                                  |
+|   GET  | `/settings`                        | Retrieve dealership settings (admin)                           |
+|   PUT  | `/settings`                        | Update dealership settings (admin)                             |
+|   GET  | `/sitemap`                         | Generate a sitemap of inventory and content pages              |
+|   GET  | `/analytics/dashboard`             | Tenant analytics dashboard (admin/marketing)                   |
+|   POST | `/analytics/events`                | Record analytics events                                        |
+|   POST | `/events`                          | Record operational events that feed rollups                    |
+|   GET  | `/ai/providers`                    | List AI providers (admin/marketing)                            |
+|   POST | `/ai/providers`                    | Register an AI provider (admin/marketing)                      |
+|   POST | `/ai/observe`                      | Record an AI observation                                       |
+|   GET  | `/ai/suggestions`                  | Retrieve AI suggestions (admin/marketing/sales)                |
+|   POST | `/ai/web-fetch`                    | Run a remote web fetch (admin/marketing)                       |
+|   GET  | `/ai/web-fetch`                    | List past web fetches (admin/marketing)                        |
+|   GET  | `/webhooks`                        | List webhooks (admin/marketing)                                |
+|   GET  | `/webhooks/deliveries`             | List webhook deliveries (admin/marketing)                      |
+|   POST | `/webhooks`                        | Create a webhook (admin/marketing)                             |
+|   PUT  | `/webhooks/:id`                    | Update a webhook (admin/marketing)                             |
+| DELETE | `/webhooks/:id`                    | Delete a webhook (admin/marketing)                             |
+|   GET  | `/audit/logs`                      | View audit log records (admin)                                 |
+|   GET  | `/exports/snapshot`                | Generate a compressed tenant snapshot (admin)                  |
+|   GET  | `/metrics`                         | Route performance + resource counts + daily rollups            |
+|   GET  | `/health`                          | Health check with uptime, tenant count and data-dir status     |
 
 ### Persisting data
 
@@ -233,23 +275,16 @@ layer.
 
 ## Extending functionality
 
-This project provides a starting point for building a full‑featured
-dealership backend.  You may wish to extend it with the following:
+The backend already ships with authentication, pagination, filtering, rate limiting, CSRF, role-based authorization and webhook
+automation. Possible next steps include:
 
-- **Authentication & authorization** – add JWT or session-based auth to
-  protect endpoints.
-- **Pagination & filtering** – support query parameters for listing
-  endpoints (e.g. `GET /inventory?page=2&limit=10`).
-- **Search & sort** – allow sorting by price, year, length, etc. and
-  searching by keyword.
-- **File uploads** – integrate with a storage service (AWS S3, local
-  filesystem) to handle image uploads for inventory units and staff
-  members.
-- **Integration with front‑end frameworks** – connect the API to a
-  React, Vue or Angular front end or to a WordPress site via REST.
+- **Search & sort enhancements** – full-text search for inventory/specs and richer sort orders.
+- **File uploads** – integrate with object storage for media on inventory, staff and content pages.
+- **Realtime updates** – push inventory/lead changes over WebSockets or server-sent events alongside existing webhooks.
+- **Database adapter** – swap the JSON persistence layer for a relational/NoSQL data store with migrations.
+- **OpenAPI/SDKs** – publish an OpenAPI spec and generate client SDKs for consumers.
 
-Feel free to tailor the code to your needs and build upon the
-foundation provided here.
+Feel free to tailor the code to your needs and build upon the foundation provided here.
 
 ## Bulk import runbook
 
