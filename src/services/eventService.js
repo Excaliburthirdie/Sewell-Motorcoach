@@ -1,7 +1,8 @@
 const { randomUUID } = require('node:crypto');
 const { datasets, persist } = require('./state');
 const { attachTenant, matchesTenant, normalizeTenantId } = require('./tenantService');
-const { escapeOutputPayload, sanitizePayloadStrings, validateFields } = require('./shared');
+const { escapeOutputPayload, sanitizePayloadStrings, validateFields, clampNumber } = require('./shared');
+const campaignService = require('./campaignService');
 
 const SUPPORTED_EVENT_TYPES = ['search', 'view', 'lead_submit'];
 
@@ -18,7 +19,20 @@ function create(payload, tenantId) {
   if (!SUPPORTED_EVENT_TYPES.includes(type)) {
     return { error: `Unsupported event type: ${payload.type}` };
   }
-  const sanitized = sanitizePayloadStrings(payload, ['type', 'stockNumber', 'leadId', 'query', 'referrer']);
+  const sanitized = sanitizePayloadStrings(payload, [
+    'type',
+    'stockNumber',
+    'leadId',
+    'query',
+    'referrer',
+    'interaction',
+    'section',
+    'utmSource',
+    'utmMedium',
+    'utmCampaign'
+  ]);
+  const durationMs = clampNumber(payload.durationMs, undefined);
+  const scrollDepth = clampNumber(payload.scrollDepth, undefined);
   const event = attachTenant(
     {
       id: randomUUID(),
@@ -27,10 +41,25 @@ function create(payload, tenantId) {
       stockNumber: sanitized.stockNumber || null,
       leadId: sanitized.leadId || null,
       query: sanitized.query || null,
-      referrer: sanitized.referrer || null
+      referrer: sanitized.referrer || null,
+      interaction: sanitized.interaction || null,
+      section: sanitized.section || null,
+      durationMs,
+      scrollDepth,
+      utmSource: sanitized.utmSource || null,
+      utmMedium: sanitized.utmMedium || null,
+      utmCampaign: sanitized.utmCampaign || null
     },
     tenantId
   );
+
+  const campaign = sanitized.utmCampaign ? campaignService.findBySlug(sanitized.utmCampaign, tenantId) : null;
+  if (campaign) {
+    event.campaignId = campaign.id;
+    if (event.leadId) {
+      campaignService.touchLeadAttribution(event.leadId, campaign.id, tenantId);
+    }
+  }
 
   datasets.events.push(event);
   persist.events(datasets.events);

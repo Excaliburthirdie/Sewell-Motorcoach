@@ -17,9 +17,14 @@ function create(payload, tenantId) {
   if (requiredError) return { error: requiredError };
 
   const sanitized = sanitizePayloadStrings(payload, ['sourcePath', 'targetPath', 'createdBy']);
+  sanitized.sourcePath = sanitized.sourcePath ? sanitized.sourcePath.trim() : sanitized.sourcePath;
+  sanitized.targetPath = sanitized.targetPath ? sanitized.targetPath.trim() : sanitized.targetPath;
+  if (!sanitized.sourcePath || !sanitized.targetPath) {
+    return { error: 'sourcePath and targetPath are required' };
+  }
   const tenant = normalizeTenantId(tenantId);
   const alreadyExists = datasets.redirects.find(
-    entry => matchesTenant(entry.tenantId, tenant) && entry.sourcePath === sanitized.sourcePath
+    entry => matchesTenant(entry.tenantId, tenant) && entry.sourcePath.toLowerCase() === sanitized.sourcePath.toLowerCase()
   );
   if (alreadyExists) {
     return { error: 'Redirect for sourcePath already exists' };

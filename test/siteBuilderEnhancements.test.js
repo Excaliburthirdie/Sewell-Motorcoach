@@ -35,6 +35,23 @@ describe('contentPageService publishing and preview', () => {
     const preview = contentPageService.findBySlug('preview', 'main', { preview: true });
     assert.ok(preview);
   });
+
+  it('persists topics and related topics on create and update', () => {
+    const created = contentPageService.create(
+      { title: 'Topic Page', body: 'Copy', topic: 'bunkhouse', relatedTopics: ['family ', 'family', 'adventure'] },
+      'main'
+    );
+    assert.equal(created.page.topic, 'bunkhouse');
+    assert.deepEqual(created.page.relatedTopics, ['family', 'adventure']);
+
+    const updated = contentPageService.update(
+      created.page.id,
+      { topic: 'family-camping', relatedTopics: ['bunkhouse', 'premium'] },
+      'main'
+    );
+    assert.equal(updated.page.topic, 'family-camping');
+    assert.deepEqual(updated.page.relatedTopics, ['bunkhouse', 'premium']);
+  });
 });
 
 describe('blockPresetService', () => {

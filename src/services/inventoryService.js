@@ -319,7 +319,7 @@ function update(id, payload, tenantId) {
 
   TRACKED_FIELDS.forEach(field => {
     if (payload[field] !== undefined && payload[field] !== previous[field]) {
-      addRevision(id, field, previous[field], tenantId, payload.updatedBy);
+      addRevision(id, field, previous[field], tenantId, payload.updatedBy, updated[field]);
     }
   });
 
@@ -404,7 +404,7 @@ function stats(tenantId) {
 function updateStory(id, salesStory, tenantId, changedBy) {
   const index = datasets.inventory.findIndex(u => u.id === id && matchesTenant(u.tenantId, tenantId));
   if (index === -1) return { notFound: true };
-  addRevision(id, 'salesStory', datasets.inventory[index].salesStory, tenantId, changedBy);
+  addRevision(id, 'salesStory', datasets.inventory[index].salesStory, tenantId, changedBy, salesStory);
   const updated = { ...datasets.inventory[index], salesStory: sanitizeString(salesStory).slice(0, 4000) };
   updated.badges = computeInventoryBadges(updated, tenantId);
   datasets.inventory[index] = updated;
@@ -415,7 +415,7 @@ function updateStory(id, salesStory, tenantId, changedBy) {
 function updateSpotlights(id, spotlights, tenantId, changedBy) {
   const index = datasets.inventory.findIndex(u => u.id === id && matchesTenant(u.tenantId, tenantId));
   if (index === -1) return { notFound: true };
-  addRevision(id, 'spotlights', datasets.inventory[index].spotlights, tenantId, changedBy);
+  addRevision(id, 'spotlights', datasets.inventory[index].spotlights, tenantId, changedBy, spotlights);
   const updated = { ...datasets.inventory[index], spotlights: normalizeSpotlights(spotlights) };
   updated.badges = computeInventoryBadges(updated, tenantId);
   datasets.inventory[index] = updated;
@@ -426,7 +426,7 @@ function updateSpotlights(id, spotlights, tenantId, changedBy) {
 function updateMediaHotspots(id, mediaHotspots, tenantId, changedBy) {
   const index = datasets.inventory.findIndex(u => u.id === id && matchesTenant(u.tenantId, tenantId));
   if (index === -1) return { notFound: true };
-  addRevision(id, 'mediaHotspots', datasets.inventory[index].mediaHotspots, tenantId, changedBy);
+  addRevision(id, 'mediaHotspots', datasets.inventory[index].mediaHotspots, tenantId, changedBy, mediaHotspots);
   const updated = { ...datasets.inventory[index], mediaHotspots: normalizeMediaHotspots(mediaHotspots) };
   updated.badges = computeInventoryBadges(updated, tenantId);
   datasets.inventory[index] = updated;

@@ -13,6 +13,17 @@ function slugify(value) {
     .slice(0, 120);
 }
 
+function normalizeTopics(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) {
+    const cleaned = value
+      .map(entry => (entry || '').toString().trim())
+      .filter(Boolean);
+    return Array.from(new Set(cleaned));
+  }
+  return [(value || '').toString().trim()].filter(Boolean);
+}
+
 function safePage(page) {
   return escapeOutputPayload(page);
 }
@@ -103,8 +114,10 @@ function create(payload, tenantId, actor) {
     'status',
     'updatedBy',
     'publishedBy',
-    'publishAt'
+    'publishAt',
+    'topic'
   ]);
+  const { relatedTopics, topic, ...rest } = sanitized;
   const slug = slugify(sanitized.slug || sanitized.title);
   if (!slug) {
     return { error: 'Slug is required for content pages' };
@@ -115,17 +128,19 @@ function create(payload, tenantId, actor) {
   const now = new Date().toISOString();
   const page = attachTenant(
     {
-      id: randomUUID(),
-      createdAt: now,
-      updatedAt: now,
-      status: sanitized.status || 'draft',
-      publishAt: sanitized.publishAt,
-      updatedBy: sanitized.updatedBy || actor,
-      publishedBy: sanitized.publishedBy,
-      ...sanitized,
-      slug
-    },
-    tenantId
+    id: randomUUID(),
+    createdAt: now,
+    updatedAt: now,
+    status: rest.status || 'draft',
+    publishAt: rest.publishAt,
+    topic,
+    relatedTopics: normalizeTopics(payload.relatedTopics || relatedTopics),
+    updatedBy: rest.updatedBy || actor,
+    publishedBy: rest.publishedBy,
+    ...rest,
+    slug
+  },
+  tenantId
   );
   datasets.contentPages.push(page);
   persist.contentPages(datasets.contentPages);
@@ -146,8 +161,10 @@ function update(id, payload, tenantId, actor) {
     'status',
     'publishedBy',
     'updatedBy',
-    'publishAt'
+    'publishAt',
+    'topic'
   ]);
+  const { relatedTopics, topic, ...rest } = sanitized;
   const slug = slugify(sanitized.slug || sanitized.title || datasets.contentPages[index].title);
   if (!slug) {
     return { error: 'Slug is required for content pages' };
@@ -157,9 +174,13 @@ function update(id, payload, tenantId, actor) {
   }
   const updated = {
     ...datasets.contentPages[index],
-    ...sanitized,
+    ...rest,
     slug,
-    updatedBy: actor || sanitized.updatedBy || datasets.contentPages[index].updatedBy,
+    topic: topic ?? datasets.contentPages[index].topic,
+    relatedTopics: payload.relatedTopics
+      ? normalizeTopics(payload.relatedTopics)
+      : normalizeTopics(relatedTopics || datasets.contentPages[index].relatedTopics || []),
+    updatedBy: actor || rest.updatedBy || datasets.contentPages[index].updatedBy,
     updatedAt: new Date().toISOString()
   };
   datasets.contentPages[index] = updated;

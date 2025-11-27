@@ -9,6 +9,13 @@ function safe(profile) {
   return escapeOutputPayload(profile);
 }
 
+function normalizePath(value) {
+  if (!value) return undefined;
+  if (value.startsWith('http://') || value.startsWith('https://')) return value;
+  if (!value.startsWith('/')) return `/${value}`;
+  return value;
+}
+
 function list(filter = {}, tenantId) {
   const tenant = normalizeTenantId(tenantId);
   const { resourceType, resourceId } = filter;
@@ -123,7 +130,7 @@ function generateInventoryProfile(item, tenantId) {
     resourceId: item.id,
     metaTitle: titleParts.join(' | ').slice(0, 60),
     metaDescription: descriptionParts.join(' • ').slice(0, 160),
-    canonicalUrl: item.slug ? `/inventory/${item.slug}` : undefined,
+      canonicalUrl: item.slug ? `/inventory/${item.slug}` : undefined,
     focusKeywords: [item.category, item.industry, item.name].filter(Boolean),
     ogImage: item.images && item.images[0]
   };
@@ -238,6 +245,71 @@ function seoHealth(tenantId) {
   };
 }
 
+function topics(tenantId) {
+  const tenant = normalizeTenantId(tenantId);
+  const pages = contentPageService.list({}, tenant) || [];
+  const topicMap = new Map();
+
+  const ensureEntry = topicLabel => {
+    const key = (topicLabel || '').toString().trim().toLowerCase();
+    if (!key) return undefined;
+    if (!topicMap.has(key)) {
+      topicMap.set(key, { topic: topicLabel.toString().trim(), relatedTopics: new Set(), pages: [] });
+    }
+    return topicMap.get(key);
+  };
+
+  pages.forEach(page => {
+    if (!page.topic) return;
+    const entry = ensureEntry(page.topic);
+    if (!entry) return;
+    const related = Array.isArray(page.relatedTopics)
+      ? page.relatedTopics.filter(Boolean)
+      : [];
+    related.forEach(item => entry.relatedTopics.add(item));
+    entry.pages.push({
+      id: page.id,
+      slug: page.slug,
+      title: page.title,
+      status: page.status,
+      updatedAt: page.updatedAt,
+      publishAt: page.publishAt
+    });
+    related.forEach(label => {
+      const sibling = ensureEntry(label);
+      if (sibling) sibling.relatedTopics.add(entry.topic);
+    });
+  });
+
+  return Array.from(topicMap.values()).map(entry => ({
+    topic: entry.topic,
+    relatedTopics: Array.from(new Set(entry.relatedTopics)),
+    pages: entry.pages
+  }));
+}
+
+function defaultCanonical(resourceType, resource) {
+  if (!resource) return undefined;
+  if (resourceType === 'inventory') {
+    const slug = resource.slug || resource.id;
+    return `/inventory/${slug}`;
+  }
+  if (resourceType === 'content') {
+    const slug = resource.slug || resource.id;
+    return `/pages/${slug}`;
+  }
+  return undefined;
+}
+
+function resolveCanonical(resourceType, resourceId, tenantId, resourceLoader) {
+  const profile = find(resourceType, resourceId, tenantId);
+  if (profile?.canonicalUrl) {
+    return normalizePath(profile.canonicalUrl);
+  }
+  const resource = resourceLoader ? resourceLoader() : undefined;
+  return normalizePath(defaultCanonical(resourceType, resource));
+}
+
 module.exports = {
   list,
   find,
@@ -246,5 +318,9 @@ module.exports = {
   generateInventoryProfile,
   generateContentProfile,
   ensureInventoryProfile,
-  seoHealth
+  seoHealth,
+  topics,
+  resolveCanonical,
+  defaultCanonical,
+  normalizePath
 };
