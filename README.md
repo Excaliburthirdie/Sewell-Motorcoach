@@ -18,6 +18,10 @@ MongoDB) by replacing the helper functions in `index.js`.
 - **Customer reviews** – store reviews with ratings and visibility flags.
 - **Lead collection** – record submissions from contact forms.
 - **Dealership settings** – update contact information and other config.
+- **Customer CRM** – track buyers with contact preferences and opt-in flags.
+- **Service tickets** – log unit issues, scheduling, technicians and line items.
+- **Finance offers** – manage lender programs and publish current terms.
+- **Complete auth lifecycle** – login, refresh, logout/revoke and `me` profile.
 
 Each resource is exposed via a separate REST endpoint.  The API can be
 consumed by a front‑end application or even imported into WordPress via
@@ -152,42 +156,57 @@ consumption.  Mutating requests (POST/PUT/PATCH/DELETE) can optionally be
 protected with a static bearer token by setting the `API_KEY` environment
 variable before starting the server.
 
-| Method | Endpoint         | Purpose                                     |
-|-------:|------------------|---------------------------------------------|
-|  POST  | `/auth/login`    | Obtain JWT access and refresh tokens        |
-|  POST  | `/auth/refresh`  | Rotate refresh token and get new access     |
-|  POST  | `/auth/logout`   | Revoke a refresh token                      |
-|  GET   | `/auth/me`       | Return the authenticated principal          |
-|  GET   | `/inventory`     | List all inventory units                     |
-|  GET   | `/inventory/stats` | Aggregate inventory stats per tenant       |
-|  GET   | `/inventory/:id` | Retrieve a single unit by ID                |
-|  GET   | `/inventory/slug/:slug` | Retrieve a single unit by slug        |
-|  POST  | `/inventory`     | Create a new unit                           |
-|  POST  | `/inventory/import` | Bulk import inventory from CSV            |
-|  PUT   | `/inventory/:id` | Update an existing unit                     |
-|  DELETE| `/inventory/:id` | Delete a unit                               |
-|  GET   | `/teams`         | List all staff teams                        |
-|  GET   | `/teams/:id`     | Retrieve a team by ID                       |
-|  POST  | `/teams`         | Create a new team                           |
-|  PUT   | `/teams/:id`     | Update a team                               |
-|  DELETE| `/teams/:id`     | Delete a team                               |
-|  GET   | `/reviews`       | List all reviews                            |
-|  GET   | `/reviews/:id`   | Retrieve a review by ID                     |
-|  POST  | `/reviews`       | Add a new review                            |
-|  PUT   | `/reviews/:id`   | Update a review                             |
-|  DELETE| `/reviews/:id`   | Delete a review                             |
-|  GET   | `/capabilities`  | List all 100 best-in-class capabilities     |
-|  GET   | `/capabilities/:id` | Retrieve a specific capability by ID      |
-|  GET   | `/capabilities/status` | Report aggregate implementation status |
-|  GET   | `/leads`         | List all leads                              |
-|  GET   | `/leads/:id`     | Retrieve a lead by ID                       |
-|  POST  | `/leads`         | Record a new lead submission                |
-|  PUT   | `/leads/:id`     | Update a lead                               |
-|  DELETE| `/leads/:id`     | Delete a lead                               |
-|  GET   | `/settings`      | Retrieve dealership settings                |
-|  PUT   | `/settings`      | Update dealership settings                  |
-|  GET   | `/health`        | Health check with uptime and request ID     |
-|  GET   | `/metrics`       | Lightweight resource metrics                |
+| Method | Endpoint               | Purpose                                      |
+|-------:|------------------------|----------------------------------------------|
+|  POST  | `/auth/login`          | Obtain JWT access and refresh tokens         |
+|  POST  | `/auth/refresh`        | Rotate refresh token and get new access      |
+|  POST  | `/auth/logout`         | Revoke a refresh token and clear cookies     |
+|  GET   | `/auth/me`             | Return the authenticated principal           |
+|  GET   | `/inventory`           | List all inventory units                     |
+|  GET   | `/inventory/stats`     | Aggregate inventory stats per tenant         |
+|  GET   | `/inventory/:id`       | Retrieve a single unit by ID                 |
+|  GET   | `/inventory/slug/:slug`| Retrieve a single unit by slug               |
+|  POST  | `/inventory`           | Create a new unit                            |
+|  POST  | `/inventory/import`    | Bulk import inventory from CSV               |
+|  PUT   | `/inventory/:id`       | Update an existing unit                      |
+|  DELETE| `/inventory/:id`       | Delete a unit                                |
+|  GET   | `/teams`               | List all staff teams                         |
+|  GET   | `/teams/:id`           | Retrieve a team by ID                        |
+|  POST  | `/teams`               | Create a new team                            |
+|  PUT   | `/teams/:id`           | Update a team                                |
+|  DELETE| `/teams/:id`           | Delete a team                                |
+|  GET   | `/reviews`             | List all reviews                             |
+|  GET   | `/reviews/:id`         | Retrieve a review by ID                      |
+|  POST  | `/reviews`             | Add a new review                             |
+|  PUT   | `/reviews/:id`         | Update a review                              |
+|  DELETE| `/reviews/:id`         | Delete a review                              |
+|  GET   | `/customers`           | List customers with pagination and filters   |
+|  GET   | `/customers/:id`       | Retrieve a customer by ID                    |
+|  POST  | `/customers`           | Create a new customer record                 |
+|  PUT   | `/customers/:id`       | Update a customer record                     |
+|  DELETE| `/customers/:id`       | Delete a customer (admin only)               |
+|  GET   | `/capabilities`        | List all 100 best-in-class capabilities      |
+|  GET   | `/capabilities/:id`    | Retrieve a specific capability by ID         |
+|  GET   | `/capabilities/status` | Report aggregate implementation status       |
+|  GET   | `/leads`               | List all leads                               |
+|  GET   | `/leads/:id`           | Retrieve a lead by ID                        |
+|  POST  | `/leads`               | Record a new lead submission                 |
+|  PUT   | `/leads/:id`           | Update a lead                                |
+|  DELETE| `/leads/:id`           | Delete a lead                                |
+|  GET   | `/service-tickets`     | List service tickets with status filters     |
+|  GET   | `/service-tickets/:id` | Retrieve a service ticket by ID              |
+|  POST  | `/service-tickets`     | Create a new service ticket                  |
+|  PUT   | `/service-tickets/:id` | Update a service ticket                      |
+|  DELETE| `/service-tickets/:id` | Delete a service ticket                      |
+|  GET   | `/finance-offers`      | List lender offers with pagination           |
+|  GET   | `/finance-offers/:id`  | Retrieve a finance offer by ID               |
+|  POST  | `/finance-offers`      | Create a finance offer (admin/marketing)     |
+|  PUT   | `/finance-offers/:id`  | Update a finance offer                       |
+|  DELETE| `/finance-offers/:id`  | Delete a finance offer                       |
+|  GET   | `/settings`            | Retrieve dealership settings                 |
+|  PUT   | `/settings`            | Update dealership settings                   |
+|  GET   | `/health`              | Health check with uptime and request ID      |
+|  GET   | `/metrics`             | Lightweight resource metrics                 |
 
 ### Persisting data
 

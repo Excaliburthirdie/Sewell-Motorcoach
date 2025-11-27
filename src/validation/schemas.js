@@ -1,5 +1,7 @@
 const { z } = require('./zodLite');
 const { VALID_LEAD_STATUSES } = require('../services/leadService');
+const { CONTACT_METHODS } = require('../services/customerService');
+const { VALID_TICKET_STATUSES } = require('../services/serviceTicketService');
 
 const INVENTORY_CONDITIONS = ['new', 'used', 'demo', 'pending_sale'];
 const TRANSFER_STATUSES = ['none', 'requested', 'in_transit', 'arrived'];
@@ -154,6 +156,61 @@ const leadListQuery = z.object({
   tenantId: z.string().trim().min(1).optional()
 });
 
+const customerCreate = z.object({
+  firstName: z.string().trim(),
+  lastName: z.string().trim(),
+  email: z.string().trim().email().optional(),
+  phone: z.string().trim().optional(),
+  preferredContactMethod: z.enum(CONTACT_METHODS).optional(),
+  marketingOptIn: z.boolean().optional(),
+  notes: z.string().trim().optional()
+});
+const customerUpdate = customerCreate.partial();
+const customerListQuery = paginationSchema.extend({
+  search: z.string().trim().optional(),
+  marketingOptIn: z.boolean().optional(),
+  tenantId: z.string().trim().min(1).optional()
+});
+
+const lineItem = z.object({
+  description: z.string().trim(),
+  laborHours: z.union([z.number(), z.string()]).optional().transform(val => (val === undefined ? undefined : Number(val))),
+  partsCost: z.union([z.number(), z.string()]).optional().transform(val => (val === undefined ? undefined : Number(val)))
+});
+
+const serviceTicketCreate = z.object({
+  customerId: z.string().trim(),
+  unitId: z.string().trim().optional(),
+  status: z.enum(VALID_TICKET_STATUSES).optional(),
+  concern: z.string().trim(),
+  scheduledDate: z.string().trim().optional(),
+  technician: z.string().trim().optional(),
+  warranty: z.boolean().optional(),
+  lineItems: z.array(lineItem).optional()
+});
+
+const serviceTicketUpdate = serviceTicketCreate.partial();
+const serviceTicketListQuery = paginationSchema.extend({
+  status: z.enum(VALID_TICKET_STATUSES).optional(),
+  customerId: z.string().trim().optional(),
+  tenantId: z.string().trim().min(1).optional()
+});
+
+const financeOfferCreate = z.object({
+  lender: z.string().trim(),
+  termMonths: z.union([z.number(), z.string()]).transform(val => Number(val)),
+  apr: z.union([z.number(), z.string()]).transform(val => Number(val)),
+  downPayment: z.union([z.number(), z.string()]).optional().transform(val => (val === undefined ? undefined : Number(val))),
+  restrictions: z.string().trim().optional(),
+  vehicleCategory: z.string().trim().optional()
+});
+
+const financeOfferUpdate = financeOfferCreate.partial();
+const financeOfferListQuery = paginationSchema.extend({
+  vehicleCategory: z.string().trim().optional(),
+  tenantId: z.string().trim().min(1).optional()
+});
+
 const contentPageCreate = z.object({
   title: z.string().trim(),
   body: z.string().trim(),
@@ -199,6 +256,8 @@ const authRefresh = z.object({
   refreshToken: z.string().trim().min(10).optional()
 });
 
+const authLogout = authRefresh;
+
 module.exports = {
   schemas: {
     capabilityListQuery,
@@ -216,6 +275,15 @@ module.exports = {
     leadUpdate,
     leadListQuery,
     leadStatusUpdate,
+    customerCreate,
+    customerUpdate,
+    customerListQuery,
+    serviceTicketCreate,
+    serviceTicketUpdate,
+    serviceTicketListQuery,
+    financeOfferCreate,
+    financeOfferUpdate,
+    financeOfferListQuery,
     settingsUpdate,
     contentPageCreate,
     contentPageUpdate,
@@ -223,7 +291,8 @@ module.exports = {
     idParam,
     inventoryId,
     authLogin,
-    authRefresh
+    authRefresh,
+    authLogout
   },
   constants: {
     INVENTORY_CONDITIONS,

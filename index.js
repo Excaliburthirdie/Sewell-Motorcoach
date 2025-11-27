@@ -15,6 +15,9 @@ const leadService = require('./src/services/leadService');
 const settingsService = require('./src/services/settingsService');
 const contentPageService = require('./src/services/contentPageService');
 const eventService = require('./src/services/eventService');
+const customerService = require('./src/services/customerService');
+const serviceTicketService = require('./src/services/serviceTicketService');
+const financeOfferService = require('./src/services/financeOfferService');
 const authService = require('./src/services/authService');
 const { datasets } = require('./src/services/state');
 const tenantService = require('./src/services/tenantService');
@@ -372,6 +375,24 @@ api.post('/auth/refresh', validateBody(schemas.authRefresh), (req, res, next) =>
   }
 });
 
+api.post('/auth/logout', validateBody(schemas.authLogout), (req, res, next) => {
+  try {
+    const token = req.validated.body.refreshToken || req.cookies?.refreshToken;
+    if (!token) {
+      return next(new AppError('UNAUTHORIZED', 'Refresh token missing', 401));
+    }
+    const record = authService.revokeRefreshToken(token);
+    res.clearCookie('refreshToken', REFRESH_COOKIE_OPTIONS);
+    res.json({ revoked: record.jti, expiresAt: record.expiresAt });
+  } catch (err) {
+    return next(new AppError('UNAUTHORIZED', err.message || 'Invalid refresh token', 401));
+  }
+});
+
+api.get('/auth/me', requireAuth, (req, res) => {
+  res.json({ user: req.user });
+});
+
 api.get('/capabilities', (req, res) => {
   res.json(capabilityService.list(req.query));
 });
@@ -523,6 +544,92 @@ api.patch('/leads/:id/status', requireAuth, authorize(['admin', 'sales', 'market
 api.delete('/leads/:id', requireAuth, authorize(['admin', 'marketing']), (req, res, next) => {
   const result = leadService.remove(req.params.id, req.tenant.id);
   if (result.notFound) return next(new AppError('NOT_FOUND', 'Lead not found', 404));
+  res.status(204).send();
+});
+
+api.get('/customers', requireAuth, authorize(['admin', 'sales', 'marketing']), validateQuery(schemas.customerListQuery), (req, res) => {
+  res.json(customerService.list(req.validated.query, req.tenant.id));
+});
+
+api.get('/customers/:id', requireAuth, authorize(['admin', 'sales', 'marketing']), (req, res, next) => {
+  const customer = customerService.findById(req.params.id, req.tenant.id);
+  if (!customer) return next(new AppError('NOT_FOUND', 'Customer not found', 404));
+  res.json(customer);
+});
+
+api.post('/customers', requireAuth, authorize(['admin', 'sales', 'marketing']), validateBody(schemas.customerCreate), (req, res, next) => {
+  const result = customerService.create(req.validated.body, req.tenant.id);
+  if (result.error) return next(new AppError('VALIDATION_ERROR', result.error, 400));
+  res.status(201).json(result.customer);
+});
+
+api.put('/customers/:id', requireAuth, authorize(['admin', 'sales', 'marketing']), validateBody(schemas.customerUpdate), (req, res, next) => {
+  const result = customerService.update(req.params.id, req.validated.body, req.tenant.id);
+  if (result.notFound) return next(new AppError('NOT_FOUND', 'Customer not found', 404));
+  if (result.error) return next(new AppError('VALIDATION_ERROR', result.error, 400));
+  res.json(result.customer);
+});
+
+api.delete('/customers/:id', requireAuth, authorize(['admin']), (req, res, next) => {
+  const result = customerService.remove(req.params.id, req.tenant.id);
+  if (result.notFound) return next(new AppError('NOT_FOUND', 'Customer not found', 404));
+  res.status(204).send();
+});
+
+api.get('/service-tickets', requireAuth, authorize(['admin', 'sales']), validateQuery(schemas.serviceTicketListQuery), (req, res) => {
+  res.json(serviceTicketService.list(req.validated.query, req.tenant.id));
+});
+
+api.get('/service-tickets/:id', requireAuth, authorize(['admin', 'sales']), (req, res, next) => {
+  const ticket = serviceTicketService.findById(req.params.id, req.tenant.id);
+  if (!ticket) return next(new AppError('NOT_FOUND', 'Service ticket not found', 404));
+  res.json(ticket);
+});
+
+api.post('/service-tickets', requireAuth, authorize(['admin', 'sales']), validateBody(schemas.serviceTicketCreate), (req, res, next) => {
+  const result = serviceTicketService.create(req.validated.body, req.tenant.id);
+  if (result.error) return next(new AppError('VALIDATION_ERROR', result.error, 400));
+  res.status(201).json(result.ticket);
+});
+
+api.put('/service-tickets/:id', requireAuth, authorize(['admin', 'sales']), validateBody(schemas.serviceTicketUpdate), (req, res, next) => {
+  const result = serviceTicketService.update(req.params.id, req.validated.body, req.tenant.id);
+  if (result.notFound) return next(new AppError('NOT_FOUND', 'Service ticket not found', 404));
+  if (result.error) return next(new AppError('VALIDATION_ERROR', result.error, 400));
+  res.json(result.ticket);
+});
+
+api.delete('/service-tickets/:id', requireAuth, authorize(['admin']), (req, res, next) => {
+  const result = serviceTicketService.remove(req.params.id, req.tenant.id);
+  if (result.notFound) return next(new AppError('NOT_FOUND', 'Service ticket not found', 404));
+  res.status(204).send();
+});
+
+api.get('/finance-offers', validateQuery(schemas.financeOfferListQuery), (req, res) => {
+  res.json(financeOfferService.list(req.validated.query, req.tenant.id));
+});
+
+api.get('/finance-offers/:id', (req, res, next) => {
+  const offer = financeOfferService.findById(req.params.id, req.tenant.id);
+  if (!offer) return next(new AppError('NOT_FOUND', 'Finance offer not found', 404));
+  res.json(offer);
+});
+
+api.post('/finance-offers', requireAuth, authorize(['admin', 'marketing']), validateBody(schemas.financeOfferCreate), (req, res, next) => {
+  const result = financeOfferService.create(req.validated.body, req.tenant.id);
+  if (result.error) return next(new AppError('VALIDATION_ERROR', result.error, 400));
+  res.status(201).json(result.offer);
+});
+
+api.put('/finance-offers/:id', requireAuth, authorize(['admin', 'marketing']), validateBody(schemas.financeOfferUpdate), (req, res, next) => {
+  const result = financeOfferService.update(req.params.id, req.validated.body, req.tenant.id);
+  if (result.notFound) return next(new AppError('NOT_FOUND', 'Finance offer not found', 404));
+  res.json(result.offer);
+});
+
+api.delete('/finance-offers/:id', requireAuth, authorize(['admin']), (req, res, next) => {
+  const result = financeOfferService.remove(req.params.id, req.tenant.id);
+  if (result.notFound) return next(new AppError('NOT_FOUND', 'Finance offer not found', 404));
   res.status(204).send();
 });
 
