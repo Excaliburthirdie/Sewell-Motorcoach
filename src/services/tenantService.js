@@ -39,6 +39,25 @@ function scopedCollection(collection, tenantId) {
   return filterByTenant(collection, tenantId);
 }
 
+function getHomeLocation(rawTenantId) {
+  const tenantId = normalizeTenantId(rawTenantId);
+  const tenant = datasets.tenants.find(entry => matchesTenant(entry.id, tenantId));
+  const settings = (datasets.settings || []).find(entry => matchesTenant(entry.tenantId, tenantId));
+
+  const lat = tenant?.lat ?? tenant?.latitude ?? settings?.locationLat ?? settings?.latitude;
+  const lng = tenant?.lng ?? tenant?.longitude ?? settings?.locationLng ?? settings?.longitude;
+
+  return {
+    tenantId,
+    name: tenant?.name || 'Primary Dealership',
+    location: tenant?.location || settings?.city || '',
+    coordinates:
+      lat !== undefined && lng !== undefined
+        ? { lat: Number(lat), lng: Number(lng) }
+        : undefined
+  };
+}
+
 module.exports = {
   DEFAULT_TENANT_ID,
   initializeTenants,
@@ -46,6 +65,7 @@ module.exports = {
   getTenant,
   listTenants,
   scopedCollection,
+  getHomeLocation,
   normalizeTenantId,
   matchesTenant,
   attachTenant
