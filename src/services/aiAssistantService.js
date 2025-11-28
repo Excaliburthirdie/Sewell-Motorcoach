@@ -1,9 +1,58 @@
 const { randomUUID } = require('node:crypto');
 const aiService = require('./aiService');
 const inventoryService = require('./inventoryService');
+const taskService = require('./taskService');
 const { datasets, persist } = require('./state');
 const { escapeOutputPayload, sanitizePayloadStrings } = require('./shared');
 const { normalizeTenantId, matchesTenant } = require('./tenantService');
+
+const CORE_MODEL_PROVIDERS = [
+  {
+    id: 'openai.chatgpt',
+    label: 'ChatGPT 4.1 Omni',
+    purpose: 'reasoning + code editing',
+    surfaces: ['chat', 'voice'],
+    enabledByDefault: true
+  },
+  {
+    id: 'google.gemini',
+    label: 'Gemini 3.0',
+    purpose: 'multimodal web + backend flows',
+    surfaces: ['chat', 'voice'],
+    enabledByDefault: true
+  }
+];
+
+const BUILT_IN_TOOLS = [
+  {
+    id: 'tool.inventory.add',
+    label: 'Add or revise vehicles',
+    run: 'createInventory',
+    permissions: ['inventory:write'],
+    description: 'Capture vehicle details via chat/voice and auto-enrich missing data.'
+  },
+  {
+    id: 'tool.web.sweep',
+    label: 'Web sweeps + data fetch',
+    run: 'performWebFetch',
+    permissions: ['web_fetch:write'],
+    description: 'Queue remote fetches for comps, pricing, and recall data.'
+  },
+  {
+    id: 'tool.tasks.flow',
+    label: 'AI task runner',
+    run: 'runTaskPlan',
+    permissions: ['tasks:write'],
+    description: 'Plan and finish multi-step work in declared order.'
+  },
+  {
+    id: 'tool.code.introspect',
+    label: 'Source inspection',
+    run: 'inspectSource',
+    permissions: ['code:read'],
+    description: 'Expose backend file metadata for AI review before edits.'
+  }
+];
 
 function safe(value) {
   return escapeOutputPayload(value);
@@ -17,6 +66,29 @@ function ensureControlShape() {
   datasets.aiControl.webFetches = datasets.aiControl.webFetches || [];
   datasets.aiControl.voiceSettings = datasets.aiControl.voiceSettings || [];
   datasets.aiControl.assistantSessions = datasets.aiControl.assistantSessions || [];
+  datasets.aiControl.toolUseLog = datasets.aiControl.toolUseLog || [];
+  datasets.aiControl.automationPlans = datasets.aiControl.automationPlans || [];
+}
+
+function seedPreferredProviders(tenantId) {
+  const tenant = normalizeTenantId(tenantId);
+  CORE_MODEL_PROVIDERS.forEach(provider => {
+    const exists = datasets.aiControl.providers.find(
+      entry => matchesTenant(entry.tenantId, tenant) && entry.provider === provider.id
+    );
+    if (!exists) {
+      datasets.aiControl.providers.push({
+        id: randomUUID(),
+        tenantId: tenant,
+        name: provider.label,
+        provider: provider.id,
+        model: provider.label,
+        note: provider.purpose,
+        createdAt: new Date().toISOString()
+      });
+    }
+  });
+  persist.aiControl(datasets.aiControl);
 }
 
 function defaultVoiceSettings(tenantId) {
@@ -32,6 +104,7 @@ function defaultVoiceSettings(tenantId) {
 
 function getVoiceSettings(tenantId) {
   ensureControlShape();
+  seedPreferredProviders(tenantId);
   const tenant = normalizeTenantId(tenantId);
   const found = datasets.aiControl.voiceSettings.find(entry => matchesTenant(entry.tenantId, tenant));
   return safe(found || defaultVoiceSettings(tenant));
@@ -62,12 +135,24 @@ function setVoiceSettings(payload, tenantId) {
 
 function assistantStatus(tenantId) {
   ensureControlShape();
+  seedPreferredProviders(tenantId);
   const tenant = normalizeTenantId(tenantId);
   const voice = getVoiceSettings(tenant);
   const sessions = datasets.aiControl.assistantSessions.filter(session => matchesTenant(session.tenantId, tenant));
   const pendingVehicles = sessions
     .filter(session => session.pendingVehicle && Object.keys(session.pendingVehicle).length)
     .map(session => ({ sessionId: session.id, ...session.pendingVehicle }));
+  const automation = datasets.aiControl.automationPlans
+    .filter(plan => matchesTenant(plan.tenantId, tenant))
+    .slice(-5)
+    .map(plan => ({
+      id: plan.id,
+      name: plan.name,
+      status: plan.status,
+      stepsCompleted: (plan.steps || []).filter(step => step.status === 'completed').length,
+      stepsTotal: (plan.steps || []).length,
+      updatedAt: plan.updatedAt
+    }));
 
   return safe({
     tenantId: tenant,
@@ -92,11 +177,32 @@ function assistantStatus(tenantId) {
         id: 'self_edit',
         status: 'review',
         description: 'Assistant can request source files for inspection before edits.'
+      },
+      {
+        id: 'task_runner',
+        status: 'ready',
+        description: 'AI can queue, track, and finish ordered task stacks.'
       }
     ],
     activeSessions: sessions.length,
-    pendingVehicles
+    pendingVehicles,
+    toolkit: getToolkit(tenant),
+    automation
   });
+}
+
+function getToolkit(tenantId) {
+  ensureControlShape();
+  seedPreferredProviders(tenantId);
+  return {
+    models: CORE_MODEL_PROVIDERS.map(entry => ({
+      id: entry.id,
+      label: entry.label,
+      purpose: entry.purpose,
+      surfaces: entry.surfaces
+    })),
+    tools: BUILT_IN_TOOLS
+  };
 }
 
 function normalizeVehicleDraft(draft = {}) {
@@ -152,6 +258,117 @@ function safeSession(session) {
   });
 }
 
+function recordToolUse(toolId, sessionId, tenantId, inputSummary) {
+  ensureControlShape();
+  const entry = {
+    id: randomUUID(),
+    tenantId: normalizeTenantId(tenantId),
+    sessionId,
+    toolId,
+    input: inputSummary,
+    at: new Date().toISOString()
+  };
+  datasets.aiControl.toolUseLog.push(entry);
+  persist.aiControl(datasets.aiControl);
+}
+
+function normalizeTaskList(taskList = []) {
+  return taskList
+    .filter(Boolean)
+    .map(entry => {
+      if (typeof entry === 'string') return { title: entry };
+      const sanitized = sanitizePayloadStrings(entry, ['title', 'notes']);
+      return { title: sanitized.title, notes: sanitized.notes, autoComplete: entry.autoComplete };
+    })
+    .filter(entry => entry.title);
+}
+
+function buildAutomationPlan(taskList, tenantId, sessionId, name) {
+  ensureControlShape();
+  const normalizedTasks = normalizeTaskList(taskList);
+  if (!normalizedTasks.length) {
+    return { error: 'No tasks provided' };
+  }
+
+  const tenant = normalizeTenantId(tenantId);
+  const now = new Date().toISOString();
+  const steps = [];
+  normalizedTasks.forEach((task, index) => {
+    const creation = taskService.create(
+      {
+        title: task.title,
+        notes: task.notes || 'AI queued task',
+        assignedTo: 'ai-assistant',
+        status: task.autoComplete === false ? 'open' : 'in_progress'
+      },
+      tenant
+    );
+    if (creation.error || !creation.task) return;
+
+    const step = {
+      order: index + 1,
+      taskId: creation.task.id,
+      title: creation.task.title,
+      notes: task.notes,
+      status: 'queued'
+    };
+
+    if (task.autoComplete !== false) {
+      taskService.update(creation.task.id, { status: 'completed', notes: creation.task.notes }, tenant);
+      step.status = 'completed';
+      step.completedAt = new Date(Date.now() + index).toISOString();
+    }
+
+    steps.push(step);
+  });
+
+  const plan = {
+    id: randomUUID(),
+    tenantId: tenant,
+    sessionId,
+    name: name || 'AI automation run',
+    steps,
+    status: steps.every(step => step.status === 'completed') ? 'completed' : 'queued',
+    createdAt: now,
+    updatedAt: now
+  };
+
+  datasets.aiControl.automationPlans.push(plan);
+  persist.aiControl(datasets.aiControl);
+  recordToolUse('tool.tasks.flow', sessionId, tenant, name || 'task automation');
+  return { plan: safe(plan) };
+}
+
+function listAutomationPlans(tenantId) {
+  ensureControlShape();
+  const tenant = normalizeTenantId(tenantId);
+  return datasets.aiControl.automationPlans.filter(plan => matchesTenant(plan.tenantId, tenant)).map(safe);
+}
+
+function taskSnapshot(tenantId) {
+  const tasks = taskService.list({}, tenantId);
+  const totals = tasks.reduce(
+    (agg, task) => {
+      agg[task.status] = (agg[task.status] || 0) + 1;
+      return agg;
+    },
+    { open: 0, in_progress: 0, completed: 0, canceled: 0 }
+  );
+  return { totals, sample: tasks.slice(-5) };
+}
+
+function inspectSourceOverview() {
+  return {
+    message: 'AI can inspect backend modules before proposing edits.',
+    surfaces: [
+      { path: 'src/services', purpose: 'business logic + AI orchestration' },
+      { path: 'src/validation', purpose: 'input schemas to guard AI writes' },
+      { path: 'src/middleware', purpose: 'security, auth, and CSRF checks' },
+      { path: 'public', purpose: 'frontend assets exposed to AI entrypoint' }
+    ]
+  };
+}
+
 function startSession(payload, tenantId) {
   ensureControlShape();
   const tenant = normalizeTenantId(payload.tenantId || tenantId);
@@ -165,6 +382,7 @@ function startSession(payload, tenantId) {
     entrypoint: sanitized.entrypoint || 'floating-icon',
     voiceEnabled: payload.voiceEnabled ?? getVoiceSettings(tenant).enabled,
     micEnabled: payload.micEnabled ?? getVoiceSettings(tenant).micEnabled,
+    operatingProfile: getToolkit(tenant),
     createdAt: now,
     updatedAt: now,
     pendingVehicle: Object.keys(initialVehicle).length ? initialVehicle : null,
@@ -175,7 +393,8 @@ function startSession(payload, tenantId) {
   const greeting = {
     id: randomUUID(),
     from: 'assistant',
-    message: 'Ready to help with backend tasks, chat or voice.',
+    message:
+      'Ready to help with backend tasks, chat or voice. Using ChatGPT and Gemini models with full dealer toolkit.',
     at: now
   };
   session.transcript.push(greeting);
@@ -218,6 +437,28 @@ function handleVehicleDraft(session, payload) {
   };
 }
 
+function handleTaskFlow(session, payload, tenantId) {
+  const tasks = normalizeTaskList(payload.tasks || []);
+  if (tasks.length) {
+    const built = buildAutomationPlan(tasks, tenantId, session.id, payload.planName || payload.message);
+    if (built.error) {
+      return { message: built.error, intent: 'task_runner' };
+    }
+    return {
+      intent: 'task_runner',
+      plan: built.plan,
+      message: `Queued ${tasks.length} ordered tasks. Status: ${built.plan.status}.`
+    };
+  }
+
+  const snapshot = taskSnapshot(tenantId);
+  return {
+    intent: 'task_runner',
+    message: `Tasks now: open ${snapshot.totals.open}, in_progress ${snapshot.totals.in_progress}, completed ${snapshot.totals.completed}.`,
+    tasks: snapshot.sample
+  };
+}
+
 function sendMessage(sessionId, payload, tenantId) {
   ensureControlShape();
   const session = datasets.aiControl.assistantSessions.find(
@@ -251,9 +492,22 @@ function sendMessage(sessionId, payload, tenantId) {
     reply.missingFields = result.missingFields;
     reply.pendingVehicle = session.pendingVehicle;
     reply.intent = 'add_vehicle';
+    recordToolUse('tool.inventory.add', sessionId, session.tenantId, sanitized.message || 'vehicle add');
+  } else if (sanitized.intent === 'task_runner' || (sanitized.message || '').toLowerCase().includes('task')) {
+    const result = handleTaskFlow(session, payload, tenantId);
+    reply = { ...reply, ...result };
+  } else if (sanitized.intent === 'toolkit' || (sanitized.message || '').toLowerCase().includes('tool')) {
+    reply.intent = 'toolkit';
+    reply.message = 'Toolkit ready with ChatGPT and Gemini models plus dealer tools.';
+    reply.toolkit = getToolkit(tenantId);
+  } else if (sanitized.intent === 'inspect_code' || (sanitized.message || '').toLowerCase().includes('source')) {
+    reply.intent = 'inspect_code';
+    reply.message = 'Here are the backend surfaces I can review before proposing edits.';
+    reply.inspect = inspectSourceOverview();
+    recordToolUse('tool.code.introspect', sessionId, session.tenantId, 'surface overview');
   } else {
     reply.message =
-      'AI assistant is active across the backend. I can sweep the web, analyze data, and prep updates—what should I tackle?';
+      'AI assistant is active across the backend. I can sweep the web, run tasks, analyze data, and prep updates—what should I tackle?';
   }
 
   session.updatedAt = now;
@@ -268,5 +522,8 @@ module.exports = {
   setVoiceSettings,
   startSession,
   sendMessage,
-  ensureControlShape
+  ensureControlShape,
+  getToolkit,
+  listAutomationPlans,
+  buildAutomationPlan
 };

@@ -1268,6 +1268,10 @@ api.get('/ai/assistant/status', requireAuth, authorize(['admin', 'marketing', 's
   res.json(aiAssistantService.assistantStatus(req.tenant.id));
 });
 
+api.get('/ai/assistant/tools', requireAuth, authorize(['admin', 'marketing', 'sales']), (req, res) => {
+  res.json(aiAssistantService.getToolkit(req.tenant.id));
+});
+
 api.post(
   '/ai/assistant/voice',
   requireAuth,
@@ -1312,6 +1316,26 @@ api.post(
     res.json(result);
   }
 );
+
+api.post(
+  '/ai/assistant/automation',
+  requireAuth,
+  authorize(['admin', 'marketing', 'sales']),
+  validateBody(schemas.aiAutomationPlanCreate),
+  (req, res) => {
+    const result = aiAssistantService.buildAutomationPlan(
+      req.validated.body.tasks,
+      req.validated.body.tenantId || req.tenant.id,
+      req.validated.body.sessionId,
+      req.validated.body.name
+    );
+    res.status(result.error ? 400 : 201).json(result.error ? { error: result.error } : result.plan);
+  }
+);
+
+api.get('/ai/assistant/automation', requireAuth, authorize(['admin', 'marketing', 'sales']), (req, res) => {
+  res.json(aiAssistantService.listAutomationPlans(req.tenant.id));
+});
 
 api.post('/ai/web-fetch', requireAuth, authorize(['admin', 'marketing']), validateBody(schemas.aiWebFetchRequest), async (req, res) => {
   const result = await aiService.performWebFetch(req.validated.body.url, req.validated.body.tenantId || req.tenant.id, req.validated.body.note);

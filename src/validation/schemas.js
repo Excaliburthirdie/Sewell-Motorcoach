@@ -515,6 +515,12 @@ const aiVoiceSettingsUpdate = z.object({
 
 const vehicleDraft = inventoryBase.partial();
 
+const aiTask = z.object({
+  title: z.string().trim(),
+  notes: z.string().trim().optional(),
+  autoComplete: z.boolean().optional()
+});
+
 const aiAssistantSessionCreate = z.object({
   channel: z.enum(['chat', 'voice']).optional(),
   entrypoint: z.string().trim().optional(),
@@ -526,9 +532,18 @@ const aiAssistantSessionCreate = z.object({
 
 const aiAssistantMessage = z.object({
   message: z.string().trim().optional(),
-  intent: z.enum(['add_vehicle', 'status', 'general']).optional(),
+  intent: z.enum(['add_vehicle', 'status', 'general', 'task_runner', 'toolkit', 'inspect_code']).optional(),
   micActive: z.boolean().optional(),
   vehicleDraft: vehicleDraft.optional(),
+  tasks: z.array(aiTask).optional(),
+  planName: z.string().trim().optional(),
+  tenantId: z.string().trim().min(1).optional()
+});
+
+const aiAutomationPlanCreate = z.object({
+  name: z.string().trim().optional(),
+  tasks: z.array(aiTask),
+  sessionId: z.string().trim().optional(),
   tenantId: z.string().trim().min(1).optional()
 });
 
@@ -681,6 +696,7 @@ module.exports = {
     aiProviderCreate,
     aiObservationCreate,
     aiWebFetchRequest,
+    aiAutomationPlanCreate,
     webhookCreate,
     webhookUpdate,
     webhookListQuery,

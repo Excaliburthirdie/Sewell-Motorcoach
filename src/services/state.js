@@ -77,7 +77,9 @@ const datasets = {
     observations: [],
     webFetches: [],
     voiceSettings: [],
-    assistantSessions: []
+    assistantSessions: [],
+    toolUseLog: [],
+    automationPlans: []
   }),
   webhooks: normalizeTenantedCollection(loadData('webhooks.json', [])),
   webhookDeliveries: normalizeTenantedCollection(loadData('webhookDeliveries.json', [])),

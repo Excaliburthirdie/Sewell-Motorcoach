@@ -4,5 +4,7 @@
   "observations": [],
   "webFetches": [],
   "voiceSettings": [],
-  "assistantSessions": []
+  "assistantSessions": [],
+  "toolUseLog": [],
+  "automationPlans": []
 }
