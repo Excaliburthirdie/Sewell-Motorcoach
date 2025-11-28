@@ -1,355 +1,393 @@
 # RV Dealer Backend
 
-This project is a simplified backend for an RV dealership.  It aims to reproduce
-the core functionality observed in the Sewell Motorcoach WordPress backend
-while using modern technology.  It provides RESTful endpoints for managing
-inventory, staff teams, customer reviews, leads and dealership settings.
+This project is a dealership-grade REST API for RV inventory, CRM, content, marketing, and operations. It mirrors the Sewell Motorcoach WordPress backend while using modern Node/Express patterns, security middleware, and file-backed persistence for fast local demos. Everything a developer needs—from architecture, configuration, and endpoints to seed data, scripts, and observability—is documented here.
 
-The server is built with [Express](https://expressjs.com/) and stores its
-data in JSON files under the `data/` directory for ease of use.  You can
-swap the data layer for a real database (such as PostgreSQL, MySQL or
-MongoDB) by replacing the helper functions in `index.js`.
+## Architecture at a glance
+- **Express-style server.** A lightweight router (`src/lib/miniExpress`) powers `index.js` with middleware for CORS, gzip, request parsing, static assets, and error handling. Request lifecycle: inbound request → tenant resolution (`tenantService`) → auth/role guard → validation → handler → persistence → audit/logging → response.
+- **File-backed persistence.** All resources are stored under `data/` and loaded via `src/persistence/store.js`. CRUD writes back to disk and appends to `data/audit.log` with masked PII; snapshots are packaged under `/v1/exports/snapshot` for per-tenant restore/testing.
+- **Validation-first.** Central schemas live in `src/validation/schemas.js` and are enforced with `validateBody`, `validateParams`, and `validateQuery` middleware. Each route declares its schema so adding endpoints stays declarative.
+- **Security & resilience.** Rate limiting, login backoff, CSRF cookies/headers, sanitization, HSTS/HTTPS enforcement, structured errors, and gzip are built-in (`index.js`). Error responses follow `{ code, message, details? }` so the UI and tests can assert on machine-readable codes.
+- **Multi-tenant by default.** `tenantService` initializes tenants and ensures every request is scoped by `X-Tenant-Id` (default `main`). Exports, audit logs, and metrics are tenant-aware.
+- **AI-capable surface.** Providers, observations, assistant sessions, and optional remote web fetches (`AI_WEB_FETCH`) are first-class features (`src/services/aiService.js`, `src/services/aiAssistantService.js`). AI events are also audit-logged with PII masking.
 
-## Features
+### Server & middleware pipeline (from `index.js`)
+- **Custom Express clone.** `src/lib/miniExpress` implements routing, middleware stacks, helpers (`res.json`, `res.cookie`, `res.sendFile`), static file serving, and JSON/urlencoded body parsing with size enforcement.
+- **Core middleware:** gzip (when enabled), security headers, JSON/urlencoded parsers, cookie parsing, and CORS (`origin: true`, credentials allowed). Static files in `/public` are served alongside the API.
+- **Input hygiene:** request strings/arrays/objects are recursively sanitized before routing logic executes.
+- **Request context:** every request gets a `X-Request-Id`, structured logs, and per-route metrics (count/status/latency) for `/metrics`.
+- **Tenant resolution:** `tenantService.resolveTenantId` normalizes tenant IDs and ensures the tenant exists before any business logic runs.
+- **Transport security:** optional HTTPS enforcement plus HSTS when behind a TLS-terminating proxy.
+- **Abuse protection:** sliding-window rate limiting (defaults in config) plus exponential login backoff keyed by IP.
+- **State protections:** CSRF token issue/check middleware, auth guards (JWT or API key), role authorization, and centralized error handling wrapping all routes.
 
-The API is built to mirror a dealership-grade control center. Every resource is scoped to a tenant (location) and guarded by
-JWT-based auth with optional legacy API key support. Highlights include:
+### Request lifecycle (deep dive)
+1. **Inbound HTTP** hits `index.js`, which wires CORS, compression, JSON/body parsers (size-limited), and static file hosting for `/public`.
+2. **Tenant resolution** via `tenantService.requireTenant` ensures `req.context.tenantId` exists (header `X-Tenant-Id` or payload `tenantId`) and creates isolated data stores on-demand.
+3. **Authentication** – `authMiddleware` validates bearer JWTs or static API keys and decorates `req.context.user` with role + username. Login/refresh routes skip guards by design.
+4. **Rate limiting/backoff** – global limiter and login-specific backoff prevent brute force. Violations emit `RATE_LIMITED` errors.
+5. **Validation** – route-level middleware loads schemas from `src/validation/schemas.js`; failures respond with `VALIDATION_ERROR` and `details.path` for UI highlighting.
+6. **Business logic** – handlers in `src/routes/*.js` call `src/services/*.js` to perform domain work. Services orchestrate persistence through `store.js` to keep audit hooks consistent.
+7. **Persistence + audit** – writes flush to `data/*.json` and append structured entries to `data/audit.log`, redacting fields in `PII_MASK_FIELDS`.
+8. **Response shaping** – successful handlers return JSON; errors travel through centralized error middleware which maps codes → HTTP status, and emits structured logs.
 
-- **Inventory management** – full CRUD, featured toggling, slug lookups, stats rollups, CSV import and pricing change audits with
-  revision history for storytelling fields and badge previews.
-- **Team (staff) management** – teams with members, roles and biographies plus CRUD for marketing/admin roles.
-- **Customer reviews** – collect, publish and moderate reviews with ratings and visibility flags.
-- **Lead collection** – unauthenticated lead intake with status updates, assignments and webhook notifications.
-- **Dealership settings** – update location/contact metadata per tenant with admin-only access.
-- **Customer CRM** – track contact preferences, opt-ins and lifecycle details for buyers and prospects.
-- **Service tickets** – log issues with line items, technician info, scheduling and status management.
-- **Finance offers** – manage lender programs and publish current rate/term blocks with marketing/admin permissions.
-- **Content pages & sitemap** – create marketing pages, fetch by slug, export a sitemap, and manage per-page drafts/publishing for
-  page-builder layouts.
-- **SEO management** – store SEO profiles, auto-fill missing records, and scope metadata to any resource.
-- **Analytics & events** – accept analytics events, view dashboard rollups, and emit internal events for metrics aggregation.
-- **Sales engagement** – manage tasks, notifications, and per-lead timelines that unify events, follow-ups, and alerts.
-- **AI control center** – register AI providers, capture observations, fetch AI suggestions, and optionally run remote web fetches
-  (gated by `AI_WEB_FETCH`).
-- **Webhooks** – create/update/delete outbound webhooks, list deliveries, and trigger them automatically on key events
-  (inventory, leads, customers, finance offers, service tickets).
-- **Audit logging & exports** – record every mutation to `data/audit.log` and generate compressed tenant snapshots for offline
-  inspection.
-- **Operational safeguards** – CSRF cookies/headers, rate limiting, input sanitization, HSTS enforcement, gzip compression,
-  per-route metrics, login backoff, and structured JSON logging with request correlation IDs.
+### Project structure (high-signal entry points)
+- `index.js` – server bootstrap, middleware wiring, route registration, and health/metrics.
+- `src/routes/*.js` – resource routers grouped by domain (inventory, content, auth, ai, analytics, exports, etc.).
+- `src/services/*.js` – business logic for auth, tenants, analytics, inventory, AI, and imports.
+- `src/lib/miniExpress` – tiny Express-like router and middleware composition helpers.
+- `src/persistence/store.js` – typed JSON persistence helpers with audit tap-ins and soft-failure guards.
+- `src/validation/schemas.js` – shared request/response schemas consumed by route validators.
+- `data/` – JSON fixtures for all resources plus `audit.log` for traceability (per-tenant entries).
+- `scripts/` – operational utilities (backfill inventory, etc.).
+- `test/` – Node test runner suites that exercise routing, validation, and auth flows.
 
-Each resource is exposed via a dedicated REST endpoint. The API can be consumed by a front‑end application, fed into WordPress,
-or integrated with automation platforms via webhooks and exports.
+### Service map (what lives where)
+- **Auth & security:** `authService.js` (JWT issuance/verification, refresh rotation/revocation), `jwt.js` (token helpers), `security.js` (masking), `tenantService.js`/`tenancy.js` (normalization, scoping), `state.js` (data hydration/persistence helpers), middleware under `src/middleware` (validation, CSRF, errors).
+- **Inventory:** `inventoryService.js` (CRUD/search/stats/story updates), `inventoryRevisionService.js` (revision history + restores), `inventorySchemaService.js` (per-unit schema view), `inventoryBadges.js` (badge calculation), `spotlightTemplateService.js` (feature templates).
+- **Content & layout:** `contentPageService.js` (pages), `pageLayoutService.js` (draft/publish), `blockPresetService.js` (builder presets), `redirectService.js` (SEO redirects), `seoService.js` (profiles/autofill), `experimentService.js` (A/B definitions).
+- **CRM & ops:** `leadService.js` (lead intake/timeline), `leadScoringService.js`, `leadEngagementService.js`, `customerService.js`, `taskService.js`, `notificationService.js`, `serviceTicketService.js`, `eventService.js` (operational events), `campaignService.js` (campaign CRUD + reporting), `financeOfferService.js`.
+- **People & reputation:** `teamService.js` (staff directory), `reviewService.js` (testimonial workflows).
+- **Analytics & observability:** `analyticsService.js` (event capture + dashboard), `capabilityService.js` (100-point checklist + status), `auditLogService.js` (audit reader), `exportService.js` (tenant snapshots), `webhookService.js` (webhook + deliveries), `settingsService.js` (tenant settings), `state.js` (per-tenant datasets and persistence mapping).
+- **AI:** `aiService.js` (providers, observations, web fetch orchestration), `aiAssistantService.js` (assistant sessions/messages/tool calls), `shared.js` (utility functions for sanitization/helpers).
+
+### Data directory map
+- `data/users.json` – seeded users + roles; referenced by auth service.
+- `data/inventory.json` – primary unit catalog plus `revisions` arrays for storytelling/history.
+- `data/content.json`, `data/pages.json`, `data/campaigns.json`, `data/leads.json`, `data/customers.json`, etc. – domain objects for the demo tenant.
+- `data/audit.log` – append-only audit trail including tenant, user, action, resource, before/after snapshots with masked PII.
+- `data/exports/` – generated snapshot archives per tenant when calling `/v1/exports/snapshot`.
+
+#### Full fixture list (per-tenant where applicable)
+`aiControl.json` (providers, agents, observations, assistant sessions, web fetches, automation plans), `analytics.json`, `capabilities.json`, `contentPages.json`, `inventory.json`, `inventoryRevisions.json`, `teams.json`, `reviews.json`, `leads.json`, `customers.json`, `serviceTickets.json`, `financeOffers.json`, `settings.json`, `tenants.json`, `users.json`, `refreshTokens.json`, `revokedRefreshTokens.json`, `seoProfiles.json`, `pageLayouts.json`, `webhooks.json`, `webhookDeliveries.json`, `redirects.json`, `spotlightTemplates.json`, `blockPresets.json`, `experiments.json`, `tasks.json`, `notifications.json`, `campaigns.json`, plus `events.json` for operational events. All load through `src/services/state.js` using `src/persistence/store.js` and are normalized with tenant metadata on boot.
 
 ## Getting started
-
-1. **Install Node.js** – version 14 or higher is recommended.  You can
-   download Node.js from [nodejs.org](https://nodejs.org/).
-
-2. **Install dependencies.**  From within the `backend` directory run:
-
+1. **Install Node.js** (v18+ recommended) and dependencies:
    ```sh
    npm install
    ```
-
-3. **Configure environment.** Copy `.env.example` to `.env` and set secrets
-   such as `JWT_SECRET`, `API_KEY`, and `DEFAULT_TENANT_ID` for your
-   dealership locations. The app also respects process environment variables
-   directly when running in containerised or hosted environments.
-
-4. **Start the server.**  The default port is `3000`, but you can set
-   the `PORT` environment variable to change it:
-
+2. **Configure secrets.** Copy `.env.example` to `.env` and set values (see configuration reference). All defaults live in `src/config.js`.
+3. **Start the API.**
    ```sh
-   # start the backend
-   npm start
-   # or for live reload during development
-   npm run dev
+   npm start      # production-style
+   npm run dev    # same command, preserved for symmetry
+   ```
+4. **Run tests.** Uses Node’s built-in runner:
+   ```sh
+   npm test
+   ```
+5. **Access endpoints.** Both `/` and `/v1` are served. Example:
+   ```sh
+   curl http://localhost:3000/v1/inventory \
+     -H "X-Tenant-Id: main" \
+     -H "Authorization: Bearer <accessToken>"
    ```
 
-4. **Access the API.**  Once running, you can open a browser or use
-   `curl`/Postman to interact with the endpoints.  For example:
+### Local data and reset patterns
+- **Seeded JSON files** live under `data/`. Delete a file to regenerate default fixtures on next boot. Keep `audit.log` if you need request trails for debugging.
+- **Per-tenant isolation** is enforced in the persistence layer; fixtures initialize with a single `main` tenant but the APIs will create a new namespace automatically when requests include a new `X-Tenant-Id`.
+- **Idempotent imports** – re-running CSV imports updates matching `stockNumber` rows; the audit log records changed fields.
 
-   ```sh
-   curl http://localhost:3000/inventory
-   curl -X POST http://localhost:3000/inventory \
-        -H "Content-Type: application/json" \
-        -d '{"stockNumber":"D3350","industry":"RV","category":"Motorhome"}'
-  ```
+## Configuration reference (from `src/config.js`)
+- **Server:** `PORT` (default `3000`), `ENFORCE_HTTPS`, `HSTS_MAX_AGE_SECONDS`, `JSON_BODY_LIMIT_MB`, `COMPRESSION_ENABLED`.
+- **Auth:** `JWT_SECRET`, `ACCESS_TOKEN_TTL_SECONDS`, `REFRESH_TOKEN_TTL_SECONDS`, `API_KEY` (optional static bearer), `PASSWORD_SALT`.
+- **Rate limiting & safety:** `RATE_LIMIT_WINDOW_MS`, `RATE_LIMIT_MAX`, `CSRF_ENABLED`, `CSRF_COOKIE_NAME`, `CSRF_HEADER_NAME`, `CSRF_PROTECTED_METHODS`.
+- **Tenancy:** `DEFAULT_TENANT_ID` fallback when `X-Tenant-Id` is omitted.
+- **AI & privacy:** `AI_WEB_FETCH`, `AI_FETCH_TIMEOUT_MS`, `PII_MASK_FIELDS` for audit redaction.
+- **Persistence:** `DATA_DIR` (env var read by `src/persistence/store.js`) points to the folder containing JSON fixtures and audit log.
 
-### Endpoints
+### Operational defaults
+- **Rate limits:** default window 1 minute with a low ceiling for demos; adjust upward for load tests.
+- **Token TTLs:** access tokens are intentionally short (minutes) and refresh tokens longer (hours) to encourage rotation; both are per-tenant.
+- **CSRF:** enabled for mutating verbs when `CSRF_ENABLED=true` and automatically issues a `csrfToken` cookie + header on first contact.
+- **Audit log:** every mutating request appends `{ timestamp, tenantId, user, action, resource, before?, after? }` with fields from `PII_MASK_FIELDS` redacted.
+- **Static API key:** when `API_KEY` is set, clients may send `Authorization: Bearer <API_KEY>` for service-to-service use cases (still tenant-scoped).
 
-All endpoints are available both at the root and under `/v1` for versioned consumption. Protected requests use JWT bearer tokens
-with refresh rotation, while the static bearer token (`API_KEY`) remains for service-to-service compatibility.
+### Configuration tips
+- Use `.env` locally; production deployments should source secrets from a vault/secret manager. `src/config.js` already reads env vars with safe defaults.
+- For HTTPS termination in containers/behind proxies set `ENFORCE_HTTPS=true` and configure `trust proxy` in your upstream (nginx, load balancer) so redirects work.
+- Increase `JSON_BODY_LIMIT_MB` when uploading large embedded JSON (e.g., specs) but keep gzip enabled to protect bandwidth.
+- Tune `AI_FETCH_TIMEOUT_MS` when remote web fetch is on to avoid tying up worker threads during long scrapes.
+
+## Seed data, roles, and authentication
+- Users live in `data/users.json` with passwords salted via `PASSWORD_SALT`:
+  - `dealer-admin` / `password123` – role: `admin`
+  - `sales-lead` / `password123` – role: `sales`
+  - `marketing-ops` / `password123` – role: `marketing`
+- **Login:** `POST /v1/auth/login` with `{ username, password, tenantId? }` → `accessToken`, `refreshToken`.
+- **Refresh:** `POST /v1/auth/refresh` rotates refresh tokens and issues a new access token (cookie scoped to `/v1/auth/refresh`).
+- **Logout:** `POST /v1/auth/logout` revokes refresh tokens.
+- **Whoami:** `GET /v1/auth/me` returns the authenticated principal.
+- **CSRF:** On first contact (e.g., `GET /v1/health`), a `csrfToken` cookie and header are issued when `CSRF_ENABLED=true`; include both for state-changing requests.
+- **Role matrix highlights:**
+  - Inventory create/update/feature: `admin`, `sales`; delete: `admin`.
+  - Teams: create/update/delete `admin`, `marketing`.
+  - Reviews: publish/update/delete `admin`, `marketing`.
+  - Leads and timelines: `admin`, `sales`, `marketing`.
+  - Settings and exports: `admin`.
 
 ### Authentication & session lifecycle
+1. **Login flow** – call `POST /v1/auth/login` with credentials and optional `tenantId`. Response contains `accessToken`, `refreshToken`, and user profile. The refresh token is also set as an HttpOnly cookie scoped to `/v1/auth/refresh` for browser clients.
+2. **Authenticated requests** – send `Authorization: Bearer <accessToken>` plus `X-Tenant-Id`. Access tokens encode username, role, tenant, and expiration; the auth middleware enforces expiration and role guards per route.
+3. **Refresh** – call `POST /v1/auth/refresh` with the refresh cookie or bearer token to rotate tokens. Rotations are logged to `audit.log` per tenant.
+4. **Logout** – call `POST /v1/auth/logout` to revoke refresh tokens and clear cookies. Access tokens naturally expire shortly after.
+5. **CSRF support** – when enabled, the server sets `csrfToken` cookie + response header. Clients must echo the header for `POST/PUT/PATCH/DELETE` (configurable via `CSRF_PROTECTED_METHODS`).
+6. **API key path** – service clients may send `Authorization: Bearer <API_KEY>` to skip JWT issuance; tenant scoping and role checks still apply.
 
-- **Login:** `POST /auth/login` with `{ "username": "dealer-admin", "password": "password123" }` (default
-  seed user). Returns an `accessToken` (short-lived) and `refreshToken` (long-lived).
-- **Refresh:** `POST /auth/refresh` with `{ "refreshToken": "<token>" }` to rotate refresh tokens and issue a new
-  access token. The previous refresh token is revoked when a new one is issued.
-- **Logout/Revoke:** `POST /auth/logout` with the refresh token to revoke it explicitly.
-- **Whoami:** `GET /auth/me` returns the authenticated principal using the supplied bearer token.
+### JWT claims & rotation rules
+- **Claims:** `{ sub: username, role, tenantId, exp, iat }`. Only route-level guards look at `role`; tenancy validation uses `tenantId`.
+- **Refresh posture:** refresh tokens are HttpOnly cookies (path `/v1/auth/refresh`) for browsers; mobile/CLI clients can pass bearer refresh tokens. Rotation is enforced—old refresh tokens are invalidated when a new one is issued.
+- **Logout semantics:** clearing the refresh token cookie + in-memory revocation list blocks future refreshes. Access tokens expire quickly, so rely on refresh for long sessions.
 
-#### Auth configuration
+## Multi-tenancy for dealership groups
+- Requests must include `X-Tenant-Id` (or `tenantId` payload) to scope reads/writes.
+- Default tenant is `main`; new tenants are initialized by `tenantService.initializeTenants()` at startup.
+- Data, audit events, exports, and metrics are tenant-specific. Snapshots generated via `/v1/exports/snapshot` include only that tenant.
 
-- `JWT_SECRET` – required in production; used to sign access and refresh tokens (default: `change-me-in-prod`).
-- `ACCESS_TOKEN_TTL_SECONDS` – lifetime for access tokens (default: `900`).
-- `REFRESH_TOKEN_TTL_SECONDS` – lifetime for refresh tokens with rotation (default: 7 days).
-- `PASSWORD_SALT` – salt used to hash seed user passwords; default aligns with the bundled seed user.
-- `API_KEY` – optional static bearer token for service-to-service or legacy automation calls.
+### Tenant bootstrapping notes
+- The `main` tenant is created at startup with default fixtures. Sending a new `X-Tenant-Id` automatically initializes a fresh namespace with empty JSON files and isolated audit logs.
+- When running imports or backfills, always include the tenant header to avoid seeding into the default tenant by accident.
+- `GET /health` reports tenant count and data directory readiness so orchestration can check multi-tenant health.
 
-#### Role-based access control
+### Tenancy behaviors and edge cases
+- **Cross-tenant isolation** – inventory, leads, users, and analytics events are stored under per-tenant collections. Attempting to access a resource without a tenant returns a validation error with code `TENANT_REQUIRED`.
+- **Implicit tenant creation** – sending a new `X-Tenant-Id` will initialize that namespace on demand; seed data is copied forward to preserve base roles.
+- **Exports/restores** – `/v1/exports/snapshot` creates a gzip bundle with `data/*.json` scoped to the requested tenant. Use this to clone environments or capture reproducible bug states.
+- **Metrics & health** – `/metrics` and `/health` report tenant counts and which data files are missing or unreadable so you can spot corrupted fixtures.
 
-Seed users are provided for local testing:
+## Feature list (what the platform delivers)
+- **Authentication & safety:** JWT + API-key auth, refresh rotation with revocation, CSRF protection, rate limiting, login backoff, and audit logging with masked PII.
+- **Multi-tenancy:** Header- or payload-driven tenant resolution, auto-bootstrapped namespaces, per-tenant exports/audit/metrics, and per-tenant seed data.
+- **Inventory & merchandising:** Full CRUD with media/story/spotlight/hotspot/badge controls, schema metadata, revision history + restore, spotlight templates, badge previews/recompute, CSV import, and merchandising toggles (feature pinning).
+- **Content & site builder:** Content pages by ID or slug, preview-aware page resolver, publish scheduling, page layouts (draft/publish), block presets, redirects, sitemap generation, and SEO profile/health/topics helpers.
+- **CRM & engagement:** Lead intake, scoring, bulk recompute, status updates, timelines; customer CRM; tasks and notifications; campaign creation/update/reporting; finance offers; service tickets; operational event ingestion.
+- **Staff & reputation:** Team directory CRUD and public review intake with role-gated updates/deletes.
+- **AI & automation:** Provider registry, observation logging, AI suggestions, assistant sessions/messages/voice/automation plans/tool listings, optional remote web fetches, and capability checklist APIs.
+- **Analytics & reporting:** Event ingestion, dashboard rollups, campaign performance report, per-route metrics, and capability status map for contract checks.
+- **Integrations:** Webhooks with delivery history, redirect rules, exports, audit log reader, and static dashboard hosted under `/` for quick demos.
 
-- `dealer-admin` / `password123` – role: `admin` (full access)
-- `sales-lead` / `sales123` – role: `sales` (inventory + leads)
-- `marketing-ops` / `marketing123` – role: `marketing` (reviews, teams, leads)
+## Full endpoint catalog (verbatim from `index.js`)
+Endpoints are tenant-scoped unless noted. Role guards are listed where enforced.
 
-Protected routes enforce the following role matrix:
+**Auth & platform**
+- `POST /v1/auth/login` – login and issue access/refresh tokens.
+- `POST /v1/auth/refresh` – rotate refresh token (cookie or bearer accepted).
+- `POST /v1/auth/logout` – revoke refresh token.
+- `GET /v1/auth/me` – return authenticated user.
+- `GET /v1/health` – readiness + tenant/data-dir status (public).
+- `GET /v1/metrics` – per-route latency/status counts + entity totals (public but tenant-scoped).
+- `GET /v1/capabilities` / `/v1/capabilities/:id` / `/v1/capabilities/status` – capability checklist and status (public).
 
-- **Inventory** create/update/feature: `admin`, `sales`; delete: `admin`.
-- **Teams** create/update/delete: `admin`, `marketing`.
-- **Reviews** create/update/delete/visibility: `admin`, `marketing`.
-- **Leads** create/update/status/delete: `admin`, `sales`, `marketing`.
-- **Settings** update: `admin`.
+**Inventory & merchandising**
+- `GET /v1/inventory` – list inventory with filters/pagination.
+- `GET /v1/inventory/stats` – aggregate stats.
+- `GET /v1/inventory/slug/:slug` – lookup by slug.
+- `GET /v1/inventory/:id` – inventory detail by ID.
+- `GET /v1/inventory/:id/revisions` – revision history (admin/sales/marketing).
+- `POST /v1/inventory/:id/revisions/:revisionId/restore` – restore a revision (admin).
+- `GET /v1/inventory/:id/schema` – schema metadata for a unit.
+- `POST /v1/inventory` – create (admin, sales).
+- `PUT /v1/inventory/:id` – update (admin, sales).
+- `PATCH /v1/inventory/:id/story` – update sales story (admin, sales).
+- `PATCH /v1/inventory/:id/spotlights` – update spotlight blocks (admin, sales, marketing).
+- `PATCH /v1/inventory/:id/hotspots` – update media hotspots (admin, sales, marketing).
+- `PATCH /v1/inventory/:id/media` – update media list (admin, sales, marketing).
+- `POST /v1/inventory/badges/preview` – preview badge outputs (admin, sales, marketing).
+- `POST /v1/inventory/bulk/spotlights/apply-template` – apply a spotlight template to many units (admin, marketing).
+- `POST /v1/inventory/bulk/recompute-badges` – recompute badges in bulk (admin, marketing).
+- `POST /v1/inventory/import` – CSV import (admin, sales).
+- `PATCH /v1/inventory/:id/feature` – toggle featured flag (admin, sales).
+- `DELETE /v1/inventory/:id` – delete (admin).
 
-Unauthorized or insufficient roles return a `403` error with a structured machine-readable error code.
+**Spotlight templates**
+- `GET /v1/spotlight-templates` – list templates (admin, marketing).
+- `POST /v1/spotlight-templates` – create template (admin, marketing).
+- `PATCH /v1/spotlight-templates/:id` – update template (admin, marketing).
+- `DELETE /v1/spotlight-templates/:id` – delete template (admin, marketing).
 
-### Multi-tenancy for dealership groups
+**Content, SEO, and site builder**
+- `GET /v1/content` – list content pages.
+- `GET /v1/content/slug/:slug` – get content by slug.
+- `GET /v1/pages/:slug` – page resolver with preview support.
+- `GET /v1/content/:id` – get content by ID.
+- `POST /v1/content` – create content (admin, marketing).
+- `PUT /v1/content/:id` – update content (admin, marketing).
+- `DELETE /v1/content/:id` – delete content (admin, marketing).
+- `POST /v1/pages/:id/publish` – publish a page (admin, marketing).
+- `GET /v1/content/:id/layout` – get layout draft/published (admin, marketing).
+- `POST /v1/content/:id/layout` – save layout draft (admin, marketing).
+- `POST /v1/content/:id/layout/publish` – publish layout (admin, marketing).
+- `GET /v1/block-presets` / `POST /v1/block-presets` / `PATCH /v1/block-presets/:id` / `DELETE /v1/block-presets/:id` – builder preset CRUD (admin, marketing).
+- `GET /v1/seo/profiles` – list SEO profiles (admin, marketing).
+- `POST /v1/seo/profiles` – upsert SEO profile (admin, marketing).
+- `POST /v1/seo/autofill` – autofill missing SEO metadata (admin, marketing).
+- `GET /v1/seo/health` – SEO health report (admin, marketing).
+- `GET /v1/seo/topics` – SEO topic suggestions (admin, marketing).
+- `GET /v1/redirects` / `POST /v1/redirects` / `DELETE /v1/redirects/:id` – redirect rules (admin, marketing).
+- `GET /v1/sitemap` – tenant sitemap (public).
 
-- **Tenant resolution.** Supply `X-Tenant-Id` (or a `tenantId` query/body field) on every request to scope reads and writes to a
-  specific dealership location. Requests without a tenant default to `main`.
-- **Seed tenants.** Two locations are provided out of the box: `main` (Harrodsburg) and `lexington`. Add more by editing
-  `data/tenants.json`.
-- **Tenant-aware auth.** Login and refresh tokens encode the tenant, and protected endpoints enforce that the bearer token’s
-  tenant matches the requested tenant to prevent cross-location data leakage.
-- **Tenant-scoped resources.** Inventory, teams, reviews, leads, customers, finance offers, service tickets, and settings are
-  all filtered and persisted per-tenant automatically. Metrics and audit logs include the tenant identifier for traceability.
+**CRM: leads, tasks, notifications, customers**
+- `GET /v1/leads` – list leads (admin, sales, marketing).
+- `GET /v1/leads/:id` – lead detail (admin, sales, marketing).
+- `GET /v1/leads/:id/score` – recompute single lead score (admin, sales, marketing).
+- `POST /v1/leads/recompute-score` – bulk score recompute (admin, sales, marketing).
+- `GET /v1/leads/:id/timeline` – engagement timeline (admin, sales, marketing).
+- `POST /v1/leads` – intake lead (public; tenant optional for payload).
+- `PUT /v1/leads/:id` – update lead (admin, sales, marketing).
+- `PATCH /v1/leads/:id/status` – set status (admin, sales, marketing).
+- `DELETE /v1/leads/:id` – delete (admin, marketing).
+- `GET /v1/tasks` / `POST /v1/tasks` / `PATCH /v1/tasks/:id` – task CRUD (admin, sales, marketing).
+- `GET /v1/notifications` / `PATCH /v1/notifications/:id` – notification list + status updates (admin, sales, marketing).
+- `GET /v1/customers` / `GET /v1/customers/:id` / `POST /v1/customers` / `PUT /v1/customers/:id` / `DELETE /v1/customers/:id` – customer CRM (role-guarded delete requires admin).
 
-### Request headers & CSRF expectations
+**Service tickets & finance**
+- `GET /v1/service-tickets` / `GET /v1/service-tickets/:id` – list/detail (admin, sales).
+- `POST /v1/service-tickets` – create (admin, sales).
+- `PUT /v1/service-tickets/:id` – update (admin, sales).
+- `DELETE /v1/service-tickets/:id` – delete (admin).
+- `GET /v1/finance-offers` / `GET /v1/finance-offers/:id` – list/detail (public).
+- `POST /v1/finance-offers` / `PUT /v1/finance-offers/:id` – create/update (admin, marketing).
+- `DELETE /v1/finance-offers/:id` – delete (admin).
 
-- **Tenant header required.** Send `X-Tenant-Id` on every request (or a `tenantId` field) to ensure data isolation.
-- **CSRF cookie + header.** The API issues a `csrfToken` cookie and matching `X-CSRF-Token` response header on first contact
-  (e.g., `GET /v1/health`). Include both the cookie and header on subsequent state-changing requests.
-- **Refresh flow.** Refresh tokens are stored in the `refreshToken` HttpOnly cookie and must be accompanied by the matching
-  CSRF header when calling `POST /v1/auth/refresh`.
-- **Legacy automation.** Service-to-service calls can still use the static bearer token (`API_KEY`) when configured, but
-  browser clients should prefer JWT + CSRF for session safety.
+**Campaigns & events**
+- `POST /v1/events` – ingest operational event.
+- `GET /v1/campaigns` – list campaigns (admin, marketing).
+- `POST /v1/campaigns` – create campaign (admin, marketing).
+- `PATCH /v1/campaigns/:id` – update campaign (admin, marketing).
+- `GET /v1/reports/campaigns/performance` – campaign performance (admin, marketing).
 
-### Bulk inventory import runbook
+**Teams & reviews**
+- `GET /v1/teams` – list teams (public).
+- `POST /v1/teams` / `PUT /v1/teams/:id` / `DELETE /v1/teams/:id` – manage teams (admin).
+- `GET /v1/reviews` – list reviews (public).
+- `POST /v1/reviews` – create review (public intake with validation).
+- `PUT /v1/reviews/:id` / `DELETE /v1/reviews/:id` – update/delete (admin, sales).
 
-A step-by-step import guide (CSV layout, authentication flow, and troubleshooting) is available in
-[`docs/import-runbook.md`](docs/import-runbook.md).
+**Settings**
+- `GET /v1/settings` / `PUT /v1/settings` – tenant settings (admin).
+- `GET /v1/settings/badge-rules` / `PATCH /v1/settings/badge-rules` – badge rule configuration (admin, marketing).
+- `GET /v1/settings/lead-scoring` / `PATCH /v1/settings/lead-scoring` – lead scoring rules (admin, marketing).
 
-### Testing
+**Analytics & experiments**
+- `POST /v1/analytics/events` – record analytics event (public).
+- `GET /v1/analytics/dashboard` – aggregated dashboard (admin, marketing).
+- `POST /v1/experiments` / `PATCH /v1/experiments/:id` – create/update experiments (admin, marketing).
+- `GET /v1/experiments/:id` – experiment detail (admin, marketing).
 
-- **Unit suite:** Uses Node's built-in test runner. Run `npm test` to execute the fast unit coverage for services.
-- **Integration coverage:** Auth + CSRF integration tests require the Express stack and the optional `supertest` dev dependency. They are skipped by default; install dev dependencies and set `RUN_INTEGRATION_TESTS=true` before `npm test` to enable them.
+**AI providers, assistant, and web fetch**
+- `GET /v1/ai/providers` / `POST /v1/ai/providers` – list/register AI providers (admin, marketing).
+- `POST /v1/ai/observe` – record model observation (public/tenant optional).
+- `GET /v1/ai/suggestions` – AI suggestions (admin, marketing, sales).
+- `GET /v1/ai/assistant/status` – assistant readiness (admin, marketing, sales).
+- `GET /v1/ai/assistant/tools` – available tools (admin, marketing, sales).
+- `POST /v1/ai/assistant/voice` – save voice settings (admin, marketing).
+- `POST /v1/ai/assistant/sessions` – start assistant session (admin, marketing, sales).
+- `POST /v1/ai/assistant/sessions/:id/messages` – send assistant message (admin, marketing, sales).
+- `POST /v1/ai/assistant/automation` / `GET /v1/ai/assistant/automation` – create/list automation plans (admin, marketing, sales).
+- `POST /v1/ai/web-fetch` / `GET /v1/ai/web-fetch` – execute/list web fetches (admin, marketing).
 
-### Validation, errors and observability
+**Integrations, exports, and observability**
+- `GET /v1/webhooks` / `POST /v1/webhooks` / `PUT /v1/webhooks/:id` / `DELETE /v1/webhooks/:id` – webhook CRUD (admin, marketing).
+- `GET /v1/webhooks/deliveries` – webhook delivery history (admin, marketing).
+- `GET /v1/audit/logs` – audit log reader (admin).
+- `GET /v1/exports/snapshot` – compressed tenant snapshot (admin).
+- `GET /v1/metrics` – route metrics + rollups (public, tenant-scoped).
+- `GET /v1/sitemap` – sitemap for SEO (public).
+- `GET /` or `/dashboard` – static dashboard HTML demo.
 
-- **Schema-first validation.** Every request body, query and route parameter is
-  validated with reusable schemas before entering business logic to keep data
-  consistent and predictable across the API surface.
-- **Machine-readable errors.** Failures return a JSON payload with an error
-  `code`, human-readable `message` and the `requestId` that traces the request
-  end-to-end.
-- **Correlation-aware logging.** Requests and errors are logged as structured
-  JSON with log levels, durations and correlation IDs so you can trace
-  cross-service flows quickly.
-- **Rate limiting.** Public endpoints are protected by a configurable
-  window/max limiter that returns a standardized error code when exceeded.
-- **HTTPS enforcement.** When `ENFORCE_HTTPS=true`, the API rejects downgraded
-  traffic and sends HSTS headers (`Strict-Transport-Security`) with the
-  configured max-age for secure deployments.
-- **CSRF protection.** Clients receive a `csrfToken` cookie + header and must echo them for state-changing requests, including
-  refresh token rotation.
-- **Input sanitization.** Requests are sanitized to strip control characters and dangerous strings before validation.
-- **Optional API key.** Legacy automations can still use the static bearer token (`API_KEY`) in lieu of JWT if configured.
-- **Compression and perf.** Responses are gzipped when supported, and per-route metrics summarize latency and status counts.
-- **Abuse safeguards.** Login attempts apply exponential backoff, and every mutation writes to `data/audit.log` with masked
-  sensitive fields.
+## Data models & payload conventions
+- **Inventory** – `id`, `stockNumber`, `vin`, `name`, `industry`, `category`, `condition`, `price`, `msrp`, `location`, `featured`, `images[]`, `stories` (rich fields), `specs` (key-value), `revisions[]` with author + timestamp.
+- **Content** – `id`, `slug`, `title`, `body`, `layout` blocks, `status`, `seo` metadata. Draft/publish split handled via `layout` sub-routes.
+- **CRM** – leads (`contact`, `source`, `intent`, `score`, `timeline[]`), customers, notifications, tasks, service tickets (labor/parts notes), finance offers (rate/term fields), teams, and reviews with publish flags.
+- **AI** – providers (`name`, `baseUrl`, `apiKey`, `capabilities`), observations (`input`, `output`, `latencyMs`), assistant sessions (`messages[]`, `toolCalls[]`), and optional `webFetch` requests.
+- **Analytics & events** – `POST /analytics/events` accepts `{ type, metadata, tenantId, user? }`; `POST /events` handles operational events.
+- **Settings** – defaults load from `data/settings.json` or fall back to `src/services/state.js` (`dealershipName`, address/phone, hours, currency). Each entry is tenant-scoped and can be updated via settings APIs.
 
-| Method | Endpoint                           | Purpose                                                        |
-|-------:|------------------------------------|----------------------------------------------------------------|
-|  POST  | `/auth/login`                      | Obtain JWT access/refresh tokens and CSRF token                |
-|  POST  | `/auth/refresh`                    | Rotate refresh token and get new access token                  |
-|  POST  | `/auth/logout`                     | Revoke a refresh token and clear cookies                       |
-|  GET   | `/auth/me`                         | Return the authenticated principal                             |
-|   GET  | `/capabilities`                    | List all 100 best-in-class capabilities                        |
-|   GET  | `/capabilities/:id`                | Retrieve a capability by ID                                    |
-|   GET  | `/capabilities/status`             | Report implementation status for the capability checklist      |
-|   GET  | `/inventory`                       | List all inventory units with filters                          |
-|   GET  | `/inventory/stats`                 | Aggregate inventory stats per tenant                           |
-|   GET  | `/inventory/:id`                   | Retrieve a single unit by ID                                   |
-|   GET  | `/inventory/slug/:slug`            | Retrieve a single unit by slug                                 |
-|   GET  | `/inventory/:id/revisions`         | List revision history for storytelling fields                  |
-|  POST  | `/inventory/:id/revisions/:revisionId/restore` | Restore a prior storytelling revision (admin)          |
-|   POST | `/inventory`                       | Create a new unit (admin/sales)                                |
-|   POST | `/inventory/badges/preview`        | Compute badges for a draft payload (admin/sales/marketing)     |
-|   POST | `/inventory/bulk/spotlights/apply-template` | Apply a saved spotlight template to units (admin/marketing) |
-|   POST | `/inventory/bulk/recompute-badges` | Recompute badges for select or all units (admin/marketing)     |
-|   POST | `/inventory/import`                | Bulk import inventory from CSV (admin/sales)                   |
-|   PUT  | `/inventory/:id`                   | Update an existing unit (admin/sales)                          |
-|  PATCH | `/inventory/:id/feature`           | Toggle featured flag (admin/sales)                             |
-| DELETE | `/inventory/:id`                   | Delete a unit (admin)                                          |
-|   GET  | `/spotlight-templates`             | List spotlight templates (admin/marketing)                     |
-|   POST | `/spotlight-templates`             | Create a spotlight template (admin/marketing)                  |
-|  PATCH | `/spotlight-templates/:id`         | Update a spotlight template (admin/marketing)                  |
-| DELETE | `/spotlight-templates/:id`         | Delete a spotlight template (admin/marketing)                  |
-|   GET  | `/content`                         | List content pages                                             |
-|   GET  | `/content/:id`                     | Retrieve a content page by ID                                  |
-|   GET  | `/content/slug/:slug`              | Retrieve a content page by slug                                |
-|   GET  | `/pages/:slug?mode=preview`        | Retrieve published pages or draft preview when authenticated   |
-|   POST | `/content`                         | Create a content page (admin/marketing)                        |
-|   PUT  | `/content/:id`                     | Update a content page (admin/marketing)                        |
-| DELETE | `/content/:id`                     | Delete a content page (admin/marketing)                        |
-|   POST | `/pages/:id/publish`               | Publish immediately or schedule a content page (admin/marketing) |
-|   GET  | `/content/:id/layout`              | Retrieve layout draft/published blocks (admin/marketing)       |
-|   POST | `/content/:id/layout`              | Save a layout draft (admin/marketing)                          |
-|   POST | `/content/:id/layout/publish`      | Publish a saved layout draft (admin/marketing)                 |
-|   GET  | `/block-presets`                   | List reusable block presets (admin/marketing)                  |
-|   POST | `/block-presets`                   | Create a block preset (admin/marketing)                        |
-|  PATCH | `/block-presets/:id`               | Update a block preset (admin/marketing)                        |
-| DELETE | `/block-presets/:id`               | Delete a block preset (admin/marketing)                        |
-|   POST | `/experiments`                     | Create an A/B experiment (admin/marketing)                     |
-|  PATCH | `/experiments/:id`                 | Update an A/B experiment (admin/marketing)                     |
-|   GET  | `/experiments/:id`                 | Retrieve experiment config and metrics (admin/marketing)       |
-|   GET  | `/seo/profiles`                    | List SEO profiles for a resource (admin/marketing)             |
-|   POST | `/seo/profiles`                    | Upsert a SEO profile (admin/marketing)                         |
-|   POST | `/seo/autofill`                    | Auto-create missing SEO profiles (admin/marketing)             |
-|   GET  | `/leads`                           | List leads with filters (admin/sales/marketing)                |
-|   GET  | `/leads/:id`                       | Retrieve a lead by ID (admin/sales/marketing)                  |
-|   GET  | `/leads/:id/score`                 | Recompute and return lead score + reasons (admin/sales/marketing) |
-|   POST | `/leads`                           | Record a new lead submission                                   |
-|   PUT  | `/leads/:id`                       | Update lead details (admin/sales/marketing)                    |
-|  PATCH | `/leads/:id/status`                | Update lead status (admin/sales/marketing)                     |
-|  POST | `/leads/recompute-score`            | Bulk recompute scores for provided leads (admin/sales/marketing) |
-| DELETE | `/leads/:id`                       | Delete a lead (admin/marketing)                                |
-|   GET  | `/settings/lead-scoring`           | Retrieve tenant scoring rules (admin/marketing)                |
-|  PATCH | `/settings/lead-scoring`           | Update tenant scoring rules (admin/marketing)                  |
-|   GET  | `/campaigns`                       | List campaigns (admin/marketing)                               |
-|   POST | `/campaigns`                       | Create a campaign (admin/marketing)                            |
-|  PATCH | `/campaigns/:id`                   | Update a campaign (admin/marketing)                            |
-|   GET  | `/reports/campaigns/performance`   | Campaign performance metrics (admin/marketing)                 |
-|   GET  | `/customers`                       | List customers with pagination/filters (admin/sales/marketing) |
-|   GET  | `/customers/:id`                   | Retrieve a customer by ID (admin/sales/marketing)              |
-|   POST | `/customers`                       | Create a customer (admin/sales/marketing)                      |
-|   PUT  | `/customers/:id`                   | Update a customer (admin/sales/marketing)                      |
-| DELETE | `/customers/:id`                   | Delete a customer (admin)                                      |
-|   GET  | `/service-tickets`                 | List service tickets with status filters (admin/sales)         |
-|   GET  | `/service-tickets/:id`             | Retrieve a service ticket by ID (admin/sales)                  |
-|   POST | `/service-tickets`                 | Create a service ticket (admin/sales)                          |
-|   PUT  | `/service-tickets/:id`             | Update a service ticket (admin/sales)                          |
-| DELETE | `/service-tickets/:id`             | Delete a service ticket (admin)                                |
-|   GET  | `/finance-offers`                  | List lender offers with pagination                             |
-|   GET  | `/finance-offers/:id`              | Retrieve a finance offer by ID                                 |
-|   POST | `/finance-offers`                  | Create a finance offer (admin/marketing)                       |
-|   PUT  | `/finance-offers/:id`              | Update a finance offer (admin/marketing)                       |
-| DELETE | `/finance-offers/:id`              | Delete a finance offer (admin)                                 |
-|   GET  | `/teams`                           | List staff teams                                               |
-|   POST | `/teams`                           | Create a team (admin)                                          |
-|   PUT  | `/teams/:id`                       | Update a team (admin)                                          |
-| DELETE | `/teams/:id`                       | Delete a team (admin)                                          |
-|   GET  | `/reviews`                         | List reviews                                                   |
-|   POST | `/reviews`                         | Add a review                                                   |
-|   PUT  | `/reviews/:id`                     | Update a review (admin/sales)                                  |
-| DELETE | `/reviews/:id`                     | Delete a review (admin/sales)                                  |
-|   GET  | `/settings`                        | Retrieve dealership settings (admin)                           |
-|   PUT  | `/settings`                        | Update dealership settings (admin)                             |
-|   GET  | `/sitemap`                         | Generate a sitemap of inventory and content pages              |
-|   GET  | `/seo/health`                      | Tenant SEO diagnostics (admin/marketing)                       |
-|   GET  | `/analytics/dashboard`             | Tenant analytics dashboard (admin/marketing)                   |
-|   POST | `/analytics/events`                | Record analytics events                                        |
-|   POST | `/events`                          | Record operational events that feed rollups                    |
-|   GET  | `/ai/providers`                    | List AI providers (admin/marketing)                            |
-|   POST | `/ai/providers`                    | Register an AI provider (admin/marketing)                      |
-|   POST | `/ai/observe`                      | Record an AI observation                                       |
-|   GET  | `/ai/suggestions`                  | Retrieve AI suggestions (admin/marketing/sales)                |
-|   POST | `/ai/web-fetch`                    | Run a remote web fetch (admin/marketing)                       |
-|   GET  | `/ai/web-fetch`                    | List past web fetches (admin/marketing)                        |
-|   GET  | `/redirects`                       | List redirect rules (admin/marketing)                          |
-|   POST | `/redirects`                       | Create a redirect rule (admin/marketing)                       |
-| DELETE | `/redirects/:id`                   | Delete a redirect (admin/marketing)                            |
-|   GET  | `/webhooks`                        | List webhooks (admin/marketing)                                |
-|   GET  | `/webhooks/deliveries`             | List webhook deliveries (admin/marketing)                      |
-|   POST | `/webhooks`                        | Create a webhook (admin/marketing)                             |
-|   PUT  | `/webhooks/:id`                    | Update a webhook (admin/marketing)                             |
-| DELETE | `/webhooks/:id`                    | Delete a webhook (admin/marketing)                             |
-|   GET  | `/audit/logs`                      | View audit log records (admin)                                 |
-|   GET  | `/exports/snapshot`                | Generate a compressed tenant snapshot (admin)                  |
-|   GET  | `/metrics`                         | Route performance + resource counts + daily rollups            |
-|   GET  | `/health`                          | Health check with uptime, tenant count and data-dir status     |
+### Validation & error handling
+- Schemas in `src/validation/schemas.js` define required fields, enums, and numeric ranges. Adding a route means importing the schema and attaching `validateBody|Params|Query` middleware.
+- Errors use machine codes (`VALIDATION_ERROR`, `AUTH_REQUIRED`, `RATE_LIMITED`, `TENANT_REQUIRED`, etc.) with HTTP status alignment. Structured errors support `details.path` for pinpointing invalid fields.
+- Inputs are sanitized before persistence; strings are trimmed and unsafe characters are neutralized for logs and responses.
 
-### Persisting data
+### Performance & pagination
+- List endpoints support pagination/query parameters defined in schemas (e.g., `page`, `pageSize`, `sort`, `filters` for inventory).
+- Gzip is on by default when `COMPRESSION_ENABLED=true`; set `JSON_BODY_LIMIT_MB` to guard oversized uploads.
+- `/metrics` captures per-route latency and counts for quick baselines when load testing.
 
-By default the backend uses the JSON files under `data/` as a simple
-persistent store.  When you modify or add new records, the data is
-written back to disk.  For production use you should replace this
-mechanism with a proper database.  See the functions `loadData()` and
-`saveData()` in `index.js` for where to plug in your own persistence
-layer.
+## Data persistence & observability
+- CRUD writes persist to `data/*.json` via `store.js`; audit trail is appended to `data/audit.log` with `PII_MASK_FIELDS` masking.
+- Static files under `public/` are served alongside the API for diagnostics or simple front-end embeds.
+- **Operational safeguards:** request correlation IDs, structured JSON logging, rate limiting buckets, login backoff, CSRF middleware, sanitization, gzip (when `COMPRESSION_ENABLED=true`).
+- **Metrics:** per-route timing and counts are exposed at `/metrics`; health, tenant counts, and data-dir status via `/health`.
 
-### Operational safeguards and observability
+### Troubleshooting quick answers
+- **Validation errors** – check `details.path` in the response; it maps directly to schema fields in `src/validation/schemas.js`.
+- **401/403 issues** – confirm bearer token is fresh (not expired) and the `role` claim matches the route’s guard in `src/routes/*`.
+- **Tenant not found** – include `X-Tenant-Id`; use `GET /health` to verify tenant count and data directory permissions.
+- **CSRF failures** – ensure the `csrfToken` cookie is set and echoed in the header configured by `CSRF_HEADER_NAME` for mutating verbs.
+- **Import failures** – invalid rows are echoed in the import response; rerun with fixed CSV and confirm `JSON_BODY_LIMIT_MB` if embedding JSON blocks.
 
-- **Request correlation IDs** are attached to every response via the
-  `X-Request-Id` header.
-- **Structured request logging** captures method, path, status code and
-  duration in JSON.
-- **Rate limiting** protects the API by default (300 requests per minute
-  per IP, configurable via environment variables).
-- **Audit logging** writes all create/update/delete operations to
-  `data/audit.log` alongside the request identifier and payload.
-- **Health** and **metrics** endpoints provide lightweight readiness
-  signals for orchestration and dashboards.
+## Useful scripts & testing
+- `npm run backfill:inventory` – hydrate `data/inventory.json` with sample units (`scripts/backfillInventory.js`).
+- `npm test` – executes the Node test suite under `test/`.
 
-## Extending functionality
+`scripts/backfillInventory.js` also slugifies inventory names, normalizes conditions, warns on duplicate VINs per tenant, sets sensible defaults for pricing/media fields, and ensures tenant-specific uniqueness for slugs.
 
-The backend already ships with authentication, pagination, filtering, rate limiting, CSRF, role-based authorization and webhook
-automation. Possible next steps include:
+### Development workflows
+- **Add a route:** create a file under `src/routes/`, import schemas from `src/validation/schemas.js`, wrap with `validateBody|Params|Query`, and register the router inside `index.js`. Use `tenantService.requireTenant` and `authMiddleware.requireRole` where needed.
+- **Add a service:** keep business logic in `src/services/*` and return plain objects; persistence writes should flow through `store.js` to ensure audit + tenant scoping.
+- **Debugging:** tail `data/audit.log` for mutation traces; use `/health` for file/tenant readiness and `/metrics` for latency hotspots.
+- **Testing:** add cases under `test/` and run `npm test`. Tests commonly boot the app, hit HTTP routes, and assert structured errors + audit behavior.
 
-- **Search & sort enhancements** – full-text search for inventory/specs and richer sort orders.
-- **File uploads** – integrate with object storage for media on inventory, staff and content pages.
-- **Realtime updates** – push inventory/lead changes over WebSockets or server-sent events alongside existing webhooks.
-- **Database adapter** – swap the JSON persistence layer for a relational/NoSQL data store with migrations.
-- **OpenAPI/SDKs** – publish an OpenAPI spec and generate client SDKs for consumers.
+### Testing & quality gates
+- **Unit/integration tests:** `npm test` uses Node’s built-in runner to spin up the app and exercise HTTP routes with fixtures.
+- **Static analysis (optional):** add `npm run lint` once a linter is configured; wire into CI as part of the gate.
+- **Contract checks:** the capability list exposed at `/v1/capabilities/status` doubles as a lightweight contract for front-end + automation clients—keep it in sync when adding features.
+- **What tests cover today:**
+  - `test/authCsrf.integration.test.js` – CSRF cookie/header issuance, protected verb behavior, and auth flows.
+  - `test/inventoryService.test.js` + `test/inventoryEnhancements.test.js` – CRUD, badge/revision logic, and schema-driven behaviors for inventory.
+  - `test/leadScoring.test.js` and `test/leadEngagement.test.js` – scoring heuristics and engagement timeline handling.
+  - `test/campaignAttribution.test.js` – campaign performance/attribution calculations.
+  - `test/seoRedirects.test.js` + `test/seoTopics.test.js` – SEO profile/redirect helpers.
+  - `test/siteBuilderEnhancements.test.js` – layout/preset behaviors for the site builder APIs.
 
-Feel free to tailor the code to your needs and build upon the foundation provided here.
+### Deployment profiles
+- **Local/dev:** run `npm start` with `.env` plus file-backed persistence; ideal for demos and QA.
+- **Containerized:** mount `data/` as a volume for persistence across restarts; set `ENFORCE_HTTPS=true` and configure proxy headers.
+- **Staging/production:** swap `store.js` with a database adapter using the same interface (see `Extending functionality`) and ship logs to an observability stack. Keep `API_KEY` in a secret store and rotate `JWT_SECRET` periodically.
 
-## Bulk import runbook
+## Bulk import runbook (CSV → `/v1/inventory/import`)
+Use multipart form-data with field `file` and header `X-Tenant-Id`. Supported columns include `stockNumber`, `vin`, `name`, `industry`, `category`, `condition`, `price`, `msrp`, `location`, `featured`, plus storytelling fields. Minimal CSV:
 
-Use the `/inventory/import` endpoint to seed or update listings in bulk. The importer accepts CSV with headers such as
-`stockNumber`, `vin`, `name`, `industry`, `category`, `condition`, `price`, `msrp`, `location`, and `featured`.
-
-1. Prepare a CSV file using UTF-8 encoding. A minimal row might look like:
-
-   ```csv
-   stockNumber,vin,name,industry,category,condition,price,msrp,location,featured
-   D3350,1FADP3E20FL123456,Georgetown GT5 35K7,RV,Motorhome,new,189999,214999,lexington,true
-   ```
-
-2. Include your tenant in the request as `X-Tenant-Id` or `tenantId` to keep data scoped correctly.
-3. POST the CSV file using multipart form data to `/v1/inventory/import` with the file field named `file`.
-4. Verify the response for any rejected rows. Common issues include missing VIN/stock numbers, unsupported `condition`
-   values, or duplicate VINs within the same tenant.
-5. If the importer reports validation errors, correct the CSV and re-run the request. Partial successes are persisted;
-   failed rows are returned with error messages for quick remediation.
+```csv
+stockNumber,vin,name,industry,category,condition,price,msrp,location,featured
+D3350,1FADP3E20FL123456,Georgetown GT5 35K7,RV,Motorhome,new,189999,214999,lexington,true
+```
 
 Troubleshooting tips:
+- Match headers exactly; normalize `condition` to `new|used|demo|pending_sale`.
+- Include tenant (`X-Tenant-Id` or `tenantId`) so units stay scoped.
+- Failed rows are returned with messages—fix and re-upload; partial successes persist.
+- Use `curl -F "file=@inventory.csv" http://localhost:3000/v1/inventory/import -H "X-Tenant-Id: main" -H "Authorization: Bearer <token>"` to test quickly.
+- Large files: bump `JSON_BODY_LIMIT_MB` if you embed JSON fields; CSV rows stream without that limit but validations still run per-row.
+- Audit trail: every row mutation is appended to `data/audit.log` with masked VIN/PII.
 
-- Ensure CSV headers exactly match the fields expected by the importer.
-- Normalize `condition` values to one of `new`, `used`, `demo`, or `pending_sale`.
-- When testing locally, remove cached uploads between runs to avoid stale files and reset tenants with fresh fixtures if needed.
+## Extending functionality
+The backend ships with auth, pagination, filtering, rate limiting, CSRF, role-based authorization, analytics, AI hooks, and webhooks. Next steps:
+- Full-text search/sort for inventory and specs.
+- Object storage for media on units, staff, and content pages.
+- WebSockets/SSE for live inventory/lead updates alongside webhooks.
+- Database adapter to replace JSON persistence.
+- OpenAPI spec + generated SDKs.
+
+### Production-hardening checklist
+- Add HTTPS termination and trusted proxy configuration for real deployments when `ENFORCE_HTTPS=true`.
+- Wire CI to run `npm test`, linting, and vulnerability scanning; gate merges on green checks.
+- Promote the static API key to a secret manager and rotate `JWT_SECRET` regularly.
+- Move persistence to a managed database (PostgreSQL/Mongo) using the `store` abstraction as the seam.
+- Enable audit shipping to an external log sink with retention policies.
+- Document SLAs and alert thresholds using `/metrics` signals.
 
 ## 100 must-have capabilities for a best-in-class RV dealership backend
-
-These items are also exposed via the API at `GET /capabilities` (full
-list) and `GET /capabilities/:id` (single item) for front-end display or
-automation workflows.  The `GET /capabilities/status` endpoint reports the
-implementation status of all items so integrations can verify that the
-full checklist is available.
+These items are exposed via `/v1/capabilities` (full list) and `/v1/capabilities/:id` (single). `/v1/capabilities/status` reports implementation status for automation checks.
 
 1. Layered architecture separating routing, business logic and persistence for clarity.
 2. Domain models for inventory, leads, customers, service tickets and finance offers.
@@ -453,12 +491,7 @@ full checklist is available.
 100. Observability-driven postmortem process with action item tracking.
 
 ### Digital experience capabilities
-
-- **SEO profiles.** Manage per-page and per-inventory metadata via `GET/POST /seo/profiles` and auto-generate missing records with
-  `POST /seo/autofill`.
-- **Analytics dashboard.** Emit lightweight analytics events (`POST /analytics/events`) and review the consolidated tenant view at
-  `GET /analytics/dashboard`.
-- **Layout drafts.** Use `POST /content/:id/layout` to save page builder blocks/widgets, then publish with
-  `POST /content/:id/layout/publish`.
-- **AI control center.** Register providers (`POST /ai/providers`), capture observations (`POST /ai/observe`), request AI-backed
-  suggestions (`GET /ai/suggestions`) and optionally run remote lookups (`POST /ai/web-fetch`) when `AI_WEB_FETCH=true`.
+- **SEO profiles.** Manage metadata via `GET/POST /seo/profiles` and auto-fill missing records with `POST /seo/autofill`.
+- **Analytics dashboard.** Emit events (`POST /analytics/events`) and review consolidated tenant view at `/analytics/dashboard`.
+- **Layout drafts.** Save page builder blocks/widgets with `POST /content/:id/layout`, publish via `/content/:id/layout/publish`.
+- **AI control center.** Register providers (`POST /ai/providers`), capture observations (`POST /ai/observe`), request suggestions (`GET /ai/suggestions`), and optionally run remote lookups (`POST /ai/web-fetch`) when `AI_WEB_FETCH=true`.
