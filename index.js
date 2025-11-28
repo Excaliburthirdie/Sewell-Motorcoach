@@ -39,6 +39,7 @@ const taskService = require('./src/services/taskService');
 const notificationService = require('./src/services/notificationService');
 const leadEngagementService = require('./src/services/leadEngagementService');
 const campaignService = require('./src/services/campaignService');
+const insightService = require('./src/services/insightService');
 const { validateBody, validateParams, validateQuery } = require('./src/middleware/validation');
 const { schemas } = require('./src/validation/schemas');
 const { AppError, errorHandler } = require('./src/middleware/errors');
@@ -1243,6 +1244,81 @@ api.get('/experiments/:id', requireAuth, authorize(['admin', 'marketing']), vali
 
 api.get('/analytics/dashboard', requireAuth, authorize(['admin', 'marketing']), (req, res) => {
   res.json(analyticsService.dashboard(req.tenant.id));
+});
+
+api.get('/insights/objections', requireAuth, authorize(['admin', 'marketing', 'sales']), (req, res) => {
+  res.json(insightService.listObjections(req.query.q, req.tenant.id, req.query.leadId));
+});
+
+api.post(
+  '/insights/objections',
+  requireAuth,
+  authorize(['admin', 'marketing']),
+  validateBody(schemas.objectionUpsert),
+  (req, res) => {
+    const result = insightService.addObjection(req.validated.body, req.validated.body.tenantId || req.tenant.id);
+    res.status(201).json(result.entry);
+  }
+);
+
+api.get('/insights/proposal-summary/:leadId?', requireAuth, authorize(['admin', 'marketing', 'sales']), (req, res) => {
+  res.json(insightService.proposalSummary(req.params.leadId, req.tenant.id, { format: req.query.format }));
+});
+
+api.get('/insights/seo-opportunities', requireAuth, authorize(['admin', 'marketing']), (req, res) => {
+  res.json(insightService.seoOpportunities(req.tenant.id));
+});
+
+api.get('/insights/trend-radar', requireAuth, authorize(['admin', 'marketing', 'sales']), (req, res) => {
+  res.json(insightService.trendRadar(req.tenant.id));
+});
+
+api.get('/insights/content-roi', requireAuth, authorize(['admin', 'marketing']), (req, res) => {
+  res.json(insightService.contentRoi(req.tenant.id));
+});
+
+api.get('/insights/local-demand', requireAuth, authorize(['admin', 'marketing', 'sales']), (req, res) => {
+  res.json(insightService.localDemand(req.tenant.id));
+});
+
+api.get('/insights/behavior-heatmaps', requireAuth, authorize(['admin', 'marketing']), (req, res) => {
+  res.json(insightService.behaviorHeatmaps(req.tenant.id));
+});
+
+api.get('/insights/deep-attribution', requireAuth, authorize(['admin', 'marketing']), (req, res) => {
+  res.json(insightService.deepAttribution(req.tenant.id));
+});
+
+api.get('/insights/merchandising-scores', requireAuth, authorize(['admin', 'marketing', 'sales']), (req, res) => {
+  res.json(insightService.merchandisingScores(req.tenant.id));
+});
+
+api.get('/insights/merchandising-queue', requireAuth, authorize(['admin', 'marketing', 'sales']), (req, res) => {
+  res.json(insightService.merchandisingQueue(req.tenant.id));
+});
+
+api.get('/insights/model-lifecycle', requireAuth, authorize(['admin', 'marketing', 'sales']), (req, res) => {
+  res.json(insightService.modelLifecycleInsights(req.tenant.id));
+});
+
+api.get('/insights/friction-map', requireAuth, authorize(['admin', 'marketing']), (req, res) => {
+  res.json(insightService.frictionMap(req.tenant.id));
+});
+
+api.get('/insights/creative-angles', requireAuth, authorize(['admin', 'marketing', 'sales']), (req, res) => {
+  res.json(insightService.creativeAngles(req.query.stockNumber || req.query.unitId, req.tenant.id));
+});
+
+api.get('/insights/cross-sell', requireAuth, authorize(['admin', 'marketing', 'sales']), (req, res) => {
+  res.json(insightService.crossSellPredictor(req.query.stockNumber || req.query.unitId, req.tenant.id));
+});
+
+api.get('/insights/self-service-portal', requireAuth, authorize(['admin', 'marketing', 'sales']), (req, res) => {
+  res.json(insightService.selfServicePortal(req.tenant.id));
+});
+
+api.get('/insights/customer-heatmap', requireAuth, authorize(['admin', 'marketing', 'sales']), (req, res) => {
+  res.json(insightService.customerBehaviorHeatmap(req.tenant.id));
 });
 
 api.get('/ai/providers', requireAuth, authorize(['admin', 'marketing']), (req, res) => {

@@ -80,7 +80,8 @@ const datasets = {
   experiments: normalizeTenantedCollection(loadData('experiments.json', [])),
   tasks: normalizeTenantedCollection(loadData('tasks.json', [])),
   notifications: normalizeTenantedCollection(loadData('notifications.json', [])),
-  campaigns: normalizeTenantedCollection(loadData('campaigns.json', []))
+  campaigns: normalizeTenantedCollection(loadData('campaigns.json', [])),
+  insights: loadData('insights.json', { objectionLibrary: [], proposalSummaries: [] })
 };
 
 const persist = {
@@ -112,7 +113,8 @@ const persist = {
   experiments: data => saveData('experiments.json', data),
   tasks: data => saveData('tasks.json', data),
   notifications: data => saveData('notifications.json', data),
-  campaigns: data => saveData('campaigns.json', data)
+  campaigns: data => saveData('campaigns.json', data),
+  insights: data => saveData('insights.json', data)
 };
 
 module.exports = {

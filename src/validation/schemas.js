@@ -505,6 +505,14 @@ const aiWebFetchRequest = z.object({
   tenantId: z.string().trim().min(1).optional()
 });
 
+const objectionUpsert = z.object({
+  question: z.string().trim().min(3),
+  answer: z.string().trim().min(3),
+  tags: z.array(z.string().trim()).optional(),
+  links: z.array(z.string().trim()).optional(),
+  tenantId: z.string().trim().min(1).optional()
+});
+
 const webhookCreate = z.object({
   url: z.string().trim().url(),
   description: z.string().trim().optional(),
@@ -654,6 +662,7 @@ module.exports = {
     aiProviderCreate,
     aiObservationCreate,
     aiWebFetchRequest,
+    objectionUpsert,
     webhookCreate,
     webhookUpdate,
     webhookListQuery,
