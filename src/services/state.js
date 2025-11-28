@@ -73,7 +73,16 @@ const datasets = {
   seoProfiles: normalizeTenantedCollection(loadData('seoProfiles.json', [])),
   analytics: loadData('analytics.json', { events: [] }),
   pageLayouts: normalizeTenantedCollection(loadData('pageLayouts.json', [])),
-  aiControl: loadData('aiControl.json', { providers: [], agents: [], observations: [], webFetches: [] }),
+  aiControl: loadData('aiControl.json', {
+    providers: [],
+    agents: [],
+    observations: [],
+    webFetches: [],
+    voiceSettings: [],
+    assistantSessions: [],
+    toolUseLog: [],
+    automationPlans: []
+  }),
   webhooks: normalizeTenantedCollection(loadData('webhooks.json', [])),
   webhookDeliveries: normalizeTenantedCollection(loadData('webhookDeliveries.json', [])),
   redirects: normalizeTenantedCollection(loadData('redirects.json', [])),
