@@ -1,7 +1,7 @@
 const { randomUUID } = require('node:crypto');
 const { datasets, persist } = require('./state');
 const { escapeOutputPayload, sanitizePayloadStrings } = require('./shared');
-const { normalizeTenantId, matchesTenant, attachTenant } = require('./tenantService');
+const { normalizeTenantId, matchesTenant, attachTenant, getHomeLocation } = require('./tenantService');
 const inventoryService = require('./inventoryService');
 const leadService = require('./leadService');
 const contentPageService = require('./contentPageService');
@@ -270,11 +270,16 @@ function localDemand(tenantId) {
   const tenant = normalizeTenantId(tenantId);
   const leads = datasets.leads.filter(lead => matchesTenant(lead.tenantId, tenant));
   const events = (datasets.analytics.events || []).filter(evt => matchesTenant(evt.tenantId, tenant));
+  const home = getHomeLocation(tenant);
+
   const heat = leads.reduce((acc, lead) => {
     const city = lead.city || lead.location || lead.region || 'Unknown';
-    acc[city] = acc[city] || { leads: 0, won: 0, coords: deriveCoordinates(lead) };
+    const coords = deriveCoordinates(lead);
+    acc[city] = acc[city] || { leads: 0, won: 0, coords, distanceMiles: [] };
     acc[city].leads += 1;
     if (lead.status === 'won') acc[city].won += 1;
+    const distance = computeDistanceMiles(lead, coords, home.coordinates);
+    if (distance !== undefined) acc[city].distanceMiles.push(distance);
     return acc;
   }, {});
 
@@ -282,12 +287,15 @@ function localDemand(tenantId) {
     .filter(evt => evt.type === 'inventory_view' || evt.type === 'lead')
     .reduce((acc, evt) => {
       const city = evt.metrics?.city || evt.region || 'Unknown';
-      acc[city] = acc[city] || { visits: 0, coords: deriveCoordinates(evt.metrics || {}) };
+      const coords = deriveCoordinates(evt.metrics || {});
+      acc[city] = acc[city] || { visits: 0, coords, distanceMiles: [] };
       acc[city].visits += 1;
+      const distance = computeDistanceMiles(evt, coords, home.coordinates);
+      if (distance !== undefined) acc[city].distanceMiles.push(distance);
       return acc;
     }, {});
 
-  const radiusBuckets = buildRadiusBuckets(leads);
+  const radiusBuckets = buildRadiusBuckets({ leads, events, homeCoordinates: home.coordinates });
 
   const points = Object.entries({ ...heat, ...visitorHotspots }).map(([city, data]) => ({
     city,
@@ -295,10 +303,14 @@ function localDemand(tenantId) {
     won: data.won || 0,
     visits: data.visits || 0,
     coordinates: data.coords,
+    avgDistanceMiles:
+      data.distanceMiles && data.distanceMiles.length
+        ? Number((data.distanceMiles.reduce((a, b) => a + b, 0) / data.distanceMiles.length).toFixed(1))
+        : undefined,
     conversionRate: (data.leads || data.visits) ? Math.round(((data.won || 0) / (data.leads || data.visits)) * 100) : 0
   }));
 
-  return { points: safe(points), radius: safe(radiusBuckets) };
+  return { points: safe(points), radius: safe(radiusBuckets), home: safe(home) };
 }
 
 function behaviorHeatmaps(tenantId) {
@@ -330,20 +342,47 @@ function deepAttribution(tenantId) {
   const tenant = normalizeTenantId(tenantId);
   const leads = datasets.leads.filter(lead => matchesTenant(lead.tenantId, tenant));
   const campaigns = datasets.campaigns || [];
+  const events = (datasets.analytics.events || []).filter(evt => matchesTenant(evt.tenantId, tenant));
 
   const paths = leads.map(lead => {
     const first = campaigns.find(c => c.id === lead.firstTouchCampaignId);
     const last = campaigns.find(c => c.id === lead.lastTouchCampaignId);
+    const timeline = events
+      .filter(evt => evt.metrics?.leadId === lead.id || evt.resourceId === lead.id || evt.metrics?.contactId === lead.contactId)
+      .map(evt => ({
+        label: evt.metrics?.label || evt.type || 'touch',
+        channel: evt.metrics?.channel || evt.channel || 'unknown',
+        campaign: evt.metrics?.campaign || evt.campaignId,
+        timestamp: evt.timestamp || evt.createdAt || new Date().toISOString(),
+        weight: evt.metrics?.weight || (evt.type === 'lead' ? 3 : 1)
+      }))
+      .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+    const weightedContribution = timeline.reduce((acc, touch) => {
+      const key = touch.channel || 'unknown';
+      acc[key] = (acc[key] || 0) + touch.weight;
+      return acc;
+    }, {});
+
     return {
       leadId: lead.id,
       stages: [
         first ? { label: 'First touch', campaign: first.name, channel: first.channel } : null,
+        ...timeline,
         last ? { label: 'Last touch', campaign: last.name, channel: last.channel } : null
-      ].filter(Boolean)
+      ].filter(Boolean),
+      weightedContribution
     };
   });
 
-  return { paths: safe(paths) };
+  const channelContribution = paths.reduce((acc, path) => {
+    Object.entries(path.weightedContribution || {}).forEach(([channel, weight]) => {
+      acc[channel] = (acc[channel] || 0) + weight;
+    });
+    return acc;
+  }, {});
+
+  return { paths: safe(paths), channels: safe(channelContribution) };
 }
 
 function merchandisingScores(tenantId) {
@@ -586,20 +625,32 @@ function renderProposalHtml(summary) {
 }
 
 function renderProposalPdf(summary) {
-  const lines = [
-    summary.headline || 'Proposal',
-    `Lead: ${summary.leadName || 'N/A'}`,
-    `Stock: ${summary.unitSummary?.stockNumber || 'N/A'}`,
-    `Unit: ${summary.unitSummary?.title || summary.unitSummary?.condition || 'N/A'}`,
-    `Price Guidance: ${summary.unitSummary?.price || summary.unitSummary?.msrp || 'Request'}`,
-    `Value Props: ${(summary.valueProps || []).join('; ')}`,
-    `Notes: ${summary.notes || ''}`
+  const sections = [
+    { label: 'Lead', value: summary.leadName || 'N/A' },
+    { label: 'Stock', value: summary.unitSummary?.stockNumber || 'N/A' },
+    { label: 'Unit', value: summary.unitSummary?.title || summary.unitSummary?.condition || 'N/A' },
+    { label: 'Price Guidance', value: summary.unitSummary?.price || summary.unitSummary?.msrp || 'Request' },
+    { label: 'Value Props', value: (summary.valueProps || []).join(' • ') },
+    { label: 'Story Highlights', value: summary.unitSummary?.storyHighlights || 'Listed features and walkthrough available.' },
+    { label: 'Trade', value: summary.trade || 'No trade provided yet.' },
+    { label: 'Notes', value: summary.notes || '' }
   ];
 
   const escape = text => (text || '').replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
-  const content = ['BT', '/F1 12 Tf', '72 720 Td']
+  const lines = [summary.headline || 'Proposal Summary', '____________________________________'];
+
+  sections.forEach(section => {
+    lines.push(`${section.label}: ${section.value}`);
+  });
+
+  const content = ['BT', '/F1 12 Tf', '72 740 Td']
     .concat(
-      lines.map((line, index) => `${index ? '0 -18 Td\n' : ''}(${escape(line)}) Tj`).join('\n')
+      lines
+        .map((line, index) => {
+          const prefix = index ? '0 -18 Td\n' : '';
+          return `${prefix}(${escape(line)}) Tj`;
+        })
+        .join('\n')
     )
     .concat(['ET'])
     .join('\n');
@@ -616,36 +667,63 @@ function deriveCoordinates(entity) {
   return { lat: Number(lat), lng: Number(lng) };
 }
 
-function deriveDistanceMiles(entity) {
-  const distance =
+function computeDistanceMiles(entity, coordinates, homeCoordinates) {
+  const explicit =
     entity.distanceFromStoreMiles ||
     entity.distanceMiles ||
     entity.distance ||
     (entity.metrics ? entity.metrics.distanceMiles : undefined);
-  if (distance !== undefined) return Number(distance);
+  if (explicit !== undefined) return Number(explicit);
+  if (coordinates && homeCoordinates) {
+    return Number(haversineMiles(coordinates, homeCoordinates).toFixed(1));
+  }
   return undefined;
 }
 
-function buildRadiusBuckets(leads) {
+function buildRadiusBuckets({ leads = [], events = [], homeCoordinates }) {
   const buckets = [
-    { label: '0-25', max: 25, leads: 0 },
-    { label: '26-50', max: 50, leads: 0 },
-    { label: '51-100', max: 100, leads: 0 },
-    { label: '101-200', max: 200, leads: 0 },
-    { label: '200+', max: Infinity, leads: 0 },
-    { label: 'unknown', max: -1, leads: 0 }
+    { label: '0-25', max: 25, leads: 0, visits: 0 },
+    { label: '26-50', max: 50, leads: 0, visits: 0 },
+    { label: '51-100', max: 100, leads: 0, visits: 0 },
+    { label: '101-200', max: 200, leads: 0, visits: 0 },
+    { label: '200+', max: Infinity, leads: 0, visits: 0 },
+    { label: 'unknown', max: -1, leads: 0, visits: 0 }
   ];
 
-  leads.forEach(lead => {
-    const distance = deriveDistanceMiles(lead);
+  const bucketDistance = (distance, kind) => {
     const bucket =
       distance === undefined
         ? buckets.find(b => b.label === 'unknown')
         : buckets.find(b => distance <= b.max);
-    if (bucket) bucket.leads += 1;
+    if (!bucket) return;
+    bucket[kind] += 1;
+  };
+
+  leads.forEach(lead => {
+    const distance = computeDistanceMiles(lead, deriveCoordinates(lead), homeCoordinates);
+    bucketDistance(distance, 'leads');
   });
 
-  return buckets.map(bucket => ({ label: bucket.label, leads: bucket.leads }));
+  events
+    .filter(evt => evt.type === 'inventory_view' || evt.type === 'lead')
+    .forEach(evt => {
+      const distance = computeDistanceMiles(evt, deriveCoordinates(evt.metrics || {}), homeCoordinates);
+      bucketDistance(distance, 'visits');
+    });
+
+  return buckets.map(bucket => ({ label: bucket.label, leads: bucket.leads, visits: bucket.visits }));
+}
+
+function haversineMiles(pointA, pointB) {
+  const toRad = deg => (deg * Math.PI) / 180;
+  const R = 3958.8; // Earth radius in miles
+  const dLat = toRad(pointB.lat - pointA.lat);
+  const dLon = toRad(pointB.lng - pointA.lng);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(pointA.lat)) * Math.cos(toRad(pointB.lat)) * Math.sin(dLon / 2) ** 2;
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
 }
 
 module.exports = {

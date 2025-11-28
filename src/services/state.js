@@ -8,6 +8,8 @@ const defaultSettings = {
   state: 'KY',
   zip: '40330',
   country: 'USA',
+  locationLat: 37.7623,
+  locationLng: -84.843,
   currency: 'USD',
   phone: '859-734-5566',
   email: 'sales@sewellmotorcoach.com',
