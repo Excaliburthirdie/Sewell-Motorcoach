@@ -26,6 +26,7 @@ const seoService = require('./src/services/seoService');
 const analyticsService = require('./src/services/analyticsService');
 const pageLayoutService = require('./src/services/pageLayoutService');
 const aiService = require('./src/services/aiService');
+const aiAssistantService = require('./src/services/aiAssistantService');
 const tenantService = require('./src/services/tenantService');
 const webhookService = require('./src/services/webhookService');
 const auditLogService = require('./src/services/auditLogService');
@@ -1261,6 +1262,79 @@ api.post('/ai/observe', validateBody(schemas.aiObservationCreate), (req, res) =>
 
 api.get('/ai/suggestions', requireAuth, authorize(['admin', 'marketing', 'sales']), (req, res) => {
   res.json(aiService.aiSuggestions(req.tenant.id));
+});
+
+api.get('/ai/assistant/status', requireAuth, authorize(['admin', 'marketing', 'sales']), (req, res) => {
+  res.json(aiAssistantService.assistantStatus(req.tenant.id));
+});
+
+api.get('/ai/assistant/tools', requireAuth, authorize(['admin', 'marketing', 'sales']), (req, res) => {
+  res.json(aiAssistantService.getToolkit(req.tenant.id));
+});
+
+api.post(
+  '/ai/assistant/voice',
+  requireAuth,
+  authorize(['admin', 'marketing']),
+  validateBody(schemas.aiVoiceSettingsUpdate),
+  (req, res) => {
+    const settings = aiAssistantService.setVoiceSettings(
+      req.validated.body,
+      req.validated.body.tenantId || req.tenant.id
+    );
+    res.status(201).json(settings);
+  }
+);
+
+api.post(
+  '/ai/assistant/sessions',
+  requireAuth,
+  authorize(['admin', 'marketing', 'sales']),
+  validateBody(schemas.aiAssistantSessionCreate),
+  (req, res) => {
+    const session = aiAssistantService.startSession(
+      req.validated.body,
+      req.validated.body.tenantId || req.tenant.id
+    );
+    res.status(201).json(session);
+  }
+);
+
+api.post(
+  '/ai/assistant/sessions/:id/messages',
+  requireAuth,
+  authorize(['admin', 'marketing', 'sales']),
+  validateParams(schemas.idParam),
+  validateBody(schemas.aiAssistantMessage),
+  (req, res, next) => {
+    const result = aiAssistantService.sendMessage(
+      req.params.id,
+      req.validated.body,
+      req.validated.body.tenantId || req.tenant.id
+    );
+    if (result.notFound) return next(new AppError('NOT_FOUND', 'Assistant session not found', 404));
+    res.json(result);
+  }
+);
+
+api.post(
+  '/ai/assistant/automation',
+  requireAuth,
+  authorize(['admin', 'marketing', 'sales']),
+  validateBody(schemas.aiAutomationPlanCreate),
+  (req, res) => {
+    const result = aiAssistantService.buildAutomationPlan(
+      req.validated.body.tasks,
+      req.validated.body.tenantId || req.tenant.id,
+      req.validated.body.sessionId,
+      req.validated.body.name
+    );
+    res.status(result.error ? 400 : 201).json(result.error ? { error: result.error } : result.plan);
+  }
+);
+
+api.get('/ai/assistant/automation', requireAuth, authorize(['admin', 'marketing', 'sales']), (req, res) => {
+  res.json(aiAssistantService.listAutomationPlans(req.tenant.id));
 });
 
 api.post('/ai/web-fetch', requireAuth, authorize(['admin', 'marketing']), validateBody(schemas.aiWebFetchRequest), async (req, res) => {

@@ -17,6 +17,8 @@ function ensureControlShape() {
   datasets.aiControl.agents = datasets.aiControl.agents || [];
   datasets.aiControl.observations = datasets.aiControl.observations || [];
   datasets.aiControl.webFetches = datasets.aiControl.webFetches || [];
+  datasets.aiControl.voiceSettings = datasets.aiControl.voiceSettings || [];
+  datasets.aiControl.assistantSessions = datasets.aiControl.assistantSessions || [];
 }
 
 function registerProvider(payload, tenantId) {
@@ -176,5 +178,6 @@ module.exports = {
   recordObservation,
   aiSuggestions,
   performWebFetch,
-  listWebFetches
+  listWebFetches,
+  ensureControlShape
 };
