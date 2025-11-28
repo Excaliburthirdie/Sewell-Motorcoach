@@ -26,6 +26,7 @@ const seoService = require('./src/services/seoService');
 const analyticsService = require('./src/services/analyticsService');
 const pageLayoutService = require('./src/services/pageLayoutService');
 const aiService = require('./src/services/aiService');
+const aiAssistantService = require('./src/services/aiAssistantService');
 const tenantService = require('./src/services/tenantService');
 const webhookService = require('./src/services/webhookService');
 const auditLogService = require('./src/services/auditLogService');
@@ -1262,6 +1263,55 @@ api.post('/ai/observe', validateBody(schemas.aiObservationCreate), (req, res) =>
 api.get('/ai/suggestions', requireAuth, authorize(['admin', 'marketing', 'sales']), (req, res) => {
   res.json(aiService.aiSuggestions(req.tenant.id));
 });
+
+api.get('/ai/assistant/status', requireAuth, authorize(['admin', 'marketing', 'sales']), (req, res) => {
+  res.json(aiAssistantService.assistantStatus(req.tenant.id));
+});
+
+api.post(
+  '/ai/assistant/voice',
+  requireAuth,
+  authorize(['admin', 'marketing']),
+  validateBody(schemas.aiVoiceSettingsUpdate),
+  (req, res) => {
+    const settings = aiAssistantService.setVoiceSettings(
+      req.validated.body,
+      req.validated.body.tenantId || req.tenant.id
+    );
+    res.status(201).json(settings);
+  }
+);
+
+api.post(
+  '/ai/assistant/sessions',
+  requireAuth,
+  authorize(['admin', 'marketing', 'sales']),
+  validateBody(schemas.aiAssistantSessionCreate),
+  (req, res) => {
+    const session = aiAssistantService.startSession(
+      req.validated.body,
+      req.validated.body.tenantId || req.tenant.id
+    );
+    res.status(201).json(session);
+  }
+);
+
+api.post(
+  '/ai/assistant/sessions/:id/messages',
+  requireAuth,
+  authorize(['admin', 'marketing', 'sales']),
+  validateParams(schemas.idParam),
+  validateBody(schemas.aiAssistantMessage),
+  (req, res, next) => {
+    const result = aiAssistantService.sendMessage(
+      req.params.id,
+      req.validated.body,
+      req.validated.body.tenantId || req.tenant.id
+    );
+    if (result.notFound) return next(new AppError('NOT_FOUND', 'Assistant session not found', 404));
+    res.json(result);
+  }
+);
 
 api.post('/ai/web-fetch', requireAuth, authorize(['admin', 'marketing']), validateBody(schemas.aiWebFetchRequest), async (req, res) => {
   const result = await aiService.performWebFetch(req.validated.body.url, req.validated.body.tenantId || req.tenant.id, req.validated.body.note);

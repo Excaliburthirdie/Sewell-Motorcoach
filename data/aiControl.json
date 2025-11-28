@@ -2,5 +2,7 @@
   "providers": [],
   "agents": [],
   "observations": [],
-  "webFetches": []
+  "webFetches": [],
+  "voiceSettings": [],
+  "assistantSessions": []
 }

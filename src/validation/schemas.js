@@ -505,6 +505,33 @@ const aiWebFetchRequest = z.object({
   tenantId: z.string().trim().min(1).optional()
 });
 
+const aiVoiceSettingsUpdate = z.object({
+  enabled: z.boolean().optional(),
+  playbackEnabled: z.boolean().optional(),
+  micEnabled: z.boolean().optional(),
+  voiceName: z.string().trim().optional(),
+  tenantId: z.string().trim().min(1).optional()
+});
+
+const vehicleDraft = inventoryBase.partial();
+
+const aiAssistantSessionCreate = z.object({
+  channel: z.enum(['chat', 'voice']).optional(),
+  entrypoint: z.string().trim().optional(),
+  voiceEnabled: z.boolean().optional(),
+  micEnabled: z.boolean().optional(),
+  vehicleDraft: vehicleDraft.optional(),
+  tenantId: z.string().trim().min(1).optional()
+});
+
+const aiAssistantMessage = z.object({
+  message: z.string().trim().optional(),
+  intent: z.enum(['add_vehicle', 'status', 'general']).optional(),
+  micActive: z.boolean().optional(),
+  vehicleDraft: vehicleDraft.optional(),
+  tenantId: z.string().trim().min(1).optional()
+});
+
 const webhookCreate = z.object({
   url: z.string().trim().url(),
   description: z.string().trim().optional(),
@@ -666,7 +693,10 @@ module.exports = {
     taskUpdate,
     taskListQuery,
     notificationStatusUpdate,
-    notificationListQuery
+    notificationListQuery,
+    aiVoiceSettingsUpdate,
+    aiAssistantSessionCreate,
+    aiAssistantMessage
   },
   constants: {
     INVENTORY_CONDITIONS,
