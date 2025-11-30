@@ -485,8 +485,13 @@ const experimentUpdate = experimentCreate.partial();
 const aiProviderCreate = z.object({
   name: z.string().trim().optional(),
   provider: z.string().trim().optional(),
+  type: z.string().trim().optional(),
   model: z.string().trim().optional(),
+  defaultModel: z.string().trim().optional(),
   apiBase: z.string().trim().optional(),
+  baseUrl: z.string().trim().url().optional(),
+  capabilities: z.array(z.string().trim()).optional(),
+  surfaces: z.array(z.string().trim()).optional(),
   note: z.string().trim().optional(),
   tenantId: z.string().trim().min(1).optional()
 });
@@ -502,6 +507,8 @@ const aiObservationCreate = z.object({
 const aiWebFetchRequest = z.object({
   url: z.string().trim().url(),
   note: z.string().trim().optional(),
+  purpose: z.string().trim().optional(),
+  maxBytes: z.number().optional(),
   tenantId: z.string().trim().min(1).optional()
 });
 
@@ -510,6 +517,8 @@ const aiVoiceSettingsUpdate = z.object({
   playbackEnabled: z.boolean().optional(),
   micEnabled: z.boolean().optional(),
   voiceName: z.string().trim().optional(),
+  sttProvider: z.enum(['openai', 'gemini', 'browser']).optional(),
+  ttsProvider: z.enum(['openai', 'gemini', 'none']).optional(),
   tenantId: z.string().trim().min(1).optional()
 });
 
@@ -526,6 +535,8 @@ const aiAssistantSessionCreate = z.object({
   entrypoint: z.string().trim().optional(),
   voiceEnabled: z.boolean().optional(),
   micEnabled: z.boolean().optional(),
+  agentId: z.string().trim().optional(),
+  context: z.any().optional(),
   vehicleDraft: vehicleDraft.optional(),
   tenantId: z.string().trim().min(1).optional()
 });
@@ -534,9 +545,19 @@ const aiAssistantMessage = z.object({
   message: z.string().trim().optional(),
   intent: z.enum(['add_vehicle', 'status', 'general', 'task_runner', 'toolkit', 'inspect_code']).optional(),
   micActive: z.boolean().optional(),
+  agentId: z.string().trim().optional(),
+  context: z.any().optional(),
+  userRole: z.string().trim().optional(),
   vehicleDraft: vehicleDraft.optional(),
   tasks: z.array(aiTask).optional(),
   planName: z.string().trim().optional(),
+  tenantId: z.string().trim().min(1).optional()
+});
+
+const aiVoiceInput = z.object({
+  transcript: z.string().trim(),
+  agentId: z.string().trim().optional(),
+  context: z.any().optional(),
   tenantId: z.string().trim().min(1).optional()
 });
 
@@ -544,6 +565,44 @@ const aiAutomationPlanCreate = z.object({
   name: z.string().trim().optional(),
   tasks: z.array(aiTask),
   sessionId: z.string().trim().optional(),
+  tenantId: z.string().trim().min(1).optional()
+});
+
+const aiAgentCall = z.object({
+  agentId: z.string().trim(),
+  message: z.string().trim().optional(),
+  subPrompt: z.string().trim().optional(),
+  model: z.string().trim().optional(),
+  context: z.any().optional(),
+  user: z
+    .object({
+      id: z.string().trim().optional(),
+      role: z.string().trim().optional(),
+      email: z.string().trim().email().optional(),
+      name: z.string().trim().optional()
+    })
+    .optional(),
+  tenantId: z.string().trim().min(1).optional()
+});
+
+const evalDefinition = z.object({
+  id: z.string().trim().optional(),
+  name: z.string().trim(),
+  category: z.string().trim().optional(),
+  description: z.string().trim().optional(),
+  examples: z.array(z.string().trim()).optional(),
+  inputsSchema: z.any().optional(),
+  playbook: z.string().trim().optional(),
+  restrictions: z.array(z.string().trim()).optional(),
+  tools: z.array(z.string().trim()).optional(),
+  autopilotLevel: z.number().optional(),
+  status: z.enum(['active', 'draft', 'deprecated']).optional(),
+  tenantId: z.string().trim().min(1).optional()
+});
+
+const inventoryDisplayConfigUpdate = z.object({
+  listView: z.any().optional(),
+  detailView: z.any().optional(),
   tenantId: z.string().trim().min(1).optional()
 });
 
@@ -697,6 +756,9 @@ module.exports = {
     aiObservationCreate,
     aiWebFetchRequest,
     aiAutomationPlanCreate,
+    aiAgentCall,
+    evalDefinition,
+    inventoryDisplayConfigUpdate,
     webhookCreate,
     webhookUpdate,
     webhookListQuery,
@@ -712,7 +774,8 @@ module.exports = {
     notificationListQuery,
     aiVoiceSettingsUpdate,
     aiAssistantSessionCreate,
-    aiAssistantMessage
+    aiAssistantMessage,
+    aiVoiceInput
   },
   constants: {
     INVENTORY_CONDITIONS,

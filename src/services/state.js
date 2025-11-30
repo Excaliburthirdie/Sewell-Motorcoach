@@ -74,12 +74,15 @@ const datasets = {
   aiControl: loadData('aiControl.json', {
     providers: [],
     agents: [],
+    toolRegistry: [],
+    toolProfiles: [],
     observations: [],
     webFetches: [],
     voiceSettings: [],
     assistantSessions: [],
     toolUseLog: [],
-    automationPlans: []
+    automationPlans: [],
+    autopilotSettings: []
   }),
   webhooks: normalizeTenantedCollection(loadData('webhooks.json', [])),
   webhookDeliveries: normalizeTenantedCollection(loadData('webhookDeliveries.json', [])),
@@ -89,7 +92,10 @@ const datasets = {
   experiments: normalizeTenantedCollection(loadData('experiments.json', [])),
   tasks: normalizeTenantedCollection(loadData('tasks.json', [])),
   notifications: normalizeTenantedCollection(loadData('notifications.json', [])),
-  campaigns: normalizeTenantedCollection(loadData('campaigns.json', []))
+  campaigns: normalizeTenantedCollection(loadData('campaigns.json', [])),
+  evals: loadData('evals.json', []),
+  aiLogs: normalizeTenantedCollection(loadData('aiLogs.json', [])),
+  inventoryDisplayConfigs: normalizeTenantedCollection(loadData('inventoryDisplayConfigs.json', []))
 };
 
 const persist = {
@@ -121,7 +127,10 @@ const persist = {
   experiments: data => saveData('experiments.json', data),
   tasks: data => saveData('tasks.json', data),
   notifications: data => saveData('notifications.json', data),
-  campaigns: data => saveData('campaigns.json', data)
+  campaigns: data => saveData('campaigns.json', data),
+  evals: data => saveData('evals.json', data),
+  aiLogs: data => saveData('aiLogs.json', data),
+  inventoryDisplayConfigs: data => saveData('inventoryDisplayConfigs.json', data)
 };
 
 module.exports = {

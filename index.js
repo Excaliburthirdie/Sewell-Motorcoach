@@ -21,7 +21,7 @@ const customerService = require('./src/services/customerService');
 const serviceTicketService = require('./src/services/serviceTicketService');
 const financeOfferService = require('./src/services/financeOfferService');
 const authService = require('./src/services/authService');
-const { datasets } = require('./src/services/state');
+const { datasets, persist } = require('./src/services/state');
 const seoService = require('./src/services/seoService');
 const analyticsService = require('./src/services/analyticsService');
 const pageLayoutService = require('./src/services/pageLayoutService');
@@ -40,6 +40,13 @@ const taskService = require('./src/services/taskService');
 const notificationService = require('./src/services/notificationService');
 const leadEngagementService = require('./src/services/leadEngagementService');
 const campaignService = require('./src/services/campaignService');
+const aiRegistryService = require('./src/services/aiRegistryService');
+const evalService = require('./src/services/evalService');
+const evalRouterService = require('./src/services/evalRouterService');
+const aiAgentService = require('./src/services/aiAgentService');
+const aiLogService = require('./src/services/aiLogService');
+const autopilotService = require('./src/services/autopilotService');
+const inventoryDisplayConfigService = require('./src/services/inventoryDisplayConfigService');
 const { validateBody, validateParams, validateQuery } = require('./src/middleware/validation');
 const { schemas } = require('./src/validation/schemas');
 const { AppError, errorHandler } = require('./src/middleware/errors');
@@ -48,6 +55,7 @@ const { ensureCsrfToken, issueCsrfToken, requireCsrfToken } = require('./src/mid
 const { maskSensitiveFields } = require('./src/services/security');
 
 tenantService.initializeTenants();
+autopilotService.start(config.tenancy.defaultTenantId);
 
 const app = express();
 app.disable('x-powered-by');
@@ -1264,12 +1272,27 @@ api.get('/ai/suggestions', requireAuth, authorize(['admin', 'marketing', 'sales'
   res.json(aiService.aiSuggestions(req.tenant.id));
 });
 
+api.get('/inventory-display-config', requireAuth, authorize(['admin', 'marketing', 'sales']), (req, res) => {
+  res.json(inventoryDisplayConfigService.get(req.tenant.id));
+});
+
+api.put(
+  '/inventory-display-config',
+  requireAuth,
+  authorize(['admin', 'marketing']),
+  validateBody(schemas.inventoryDisplayConfigUpdate),
+  (req, res) => {
+    const result = inventoryDisplayConfigService.update(req.validated.body, req.validated.body.tenantId || req.tenant.id);
+    res.json(result);
+  }
+);
+
 api.get('/ai/assistant/status', requireAuth, authorize(['admin', 'marketing', 'sales']), (req, res) => {
-  res.json(aiAssistantService.assistantStatus(req.tenant.id));
+  res.json(aiAssistantService.assistantStatus(req.tenant.id, req.user?.role));
 });
 
 api.get('/ai/assistant/tools', requireAuth, authorize(['admin', 'marketing', 'sales']), (req, res) => {
-  res.json(aiAssistantService.getToolkit(req.tenant.id));
+  res.json(aiAssistantService.getToolkit(req.tenant.id, { role: req.user?.role }));
 });
 
 api.post(
@@ -1307,15 +1330,77 @@ api.post(
   validateParams(schemas.idParam),
   validateBody(schemas.aiAssistantMessage),
   (req, res, next) => {
-    const result = aiAssistantService.sendMessage(
-      req.params.id,
-      req.validated.body,
-      req.validated.body.tenantId || req.tenant.id
-    );
+    const payload = { ...req.validated.body, userRole: req.user?.role };
+    const result = aiAssistantService.sendMessage(req.params.id, payload, payload.tenantId || req.tenant.id);
     if (result.notFound) return next(new AppError('NOT_FOUND', 'Assistant session not found', 404));
     res.json(result);
   }
 );
+
+api.post(
+  '/ai/assistant/sessions/:id/voice-input',
+  requireAuth,
+  authorize(['admin', 'marketing', 'sales']),
+  validateParams(schemas.idParam),
+  validateBody(schemas.aiVoiceInput),
+  (req, res, next) => {
+    const payload = {
+      message: req.validated.body.transcript,
+      agentId: req.validated.body.agentId,
+      context: req.validated.body.context,
+      micActive: true,
+      userRole: req.user?.role,
+      tenantId: req.validated.body.tenantId || req.tenant.id
+    };
+    const result = aiAssistantService.sendMessage(req.params.id, payload, payload.tenantId);
+    if (result.notFound) return next(new AppError('NOT_FOUND', 'Assistant session not found', 404));
+    res.json(result);
+  }
+);
+
+api.post(
+  '/ai/assistant/agent-call',
+  requireAuth,
+  authorize(['admin', 'marketing', 'sales']),
+  validateBody(schemas.aiAgentCall),
+  (req, res) => {
+    const result = aiAssistantService.prepareAgentCall(
+      req.validated.body.agentId,
+      {
+        message: req.validated.body.message,
+        subPrompt: req.validated.body.subPrompt,
+        model: req.validated.body.model,
+        context: req.validated.body.context,
+        user: req.validated.body.user || {
+          id: req.user?.id,
+          role: req.user?.role,
+          email: req.user?.email,
+          name: req.user?.name
+        }
+      },
+      req.validated.body.tenantId || req.tenant.id
+    );
+    if (result.error) {
+      return res.status(400).json({ error: result.error });
+    }
+    res.json(result);
+  }
+);
+
+api.post('/ai/assistant/model-output', requireAuth, authorize(['admin', 'marketing', 'sales']), (req, res) => {
+  const result = aiAgentService.processModelOutput(req.body.output || {}, {
+    tenantId: req.body.tenantId || req.tenant.id,
+    evalId: req.body.evalId,
+    agentId: req.body.agentId,
+    sessionId: req.body.sessionId,
+    mode: req.body.mode,
+    user: req.user,
+    context: req.body.context,
+    autopilotLevel: req.body.autopilotLevel,
+    maxAutopilotLevel: req.body.maxAutopilotLevel
+  });
+  res.json(result);
+});
 
 api.post(
   '/ai/assistant/automation',
@@ -1338,12 +1423,134 @@ api.get('/ai/assistant/automation', requireAuth, authorize(['admin', 'marketing'
 });
 
 api.post('/ai/web-fetch', requireAuth, authorize(['admin', 'marketing']), validateBody(schemas.aiWebFetchRequest), async (req, res) => {
-  const result = await aiService.performWebFetch(req.validated.body.url, req.validated.body.tenantId || req.tenant.id, req.validated.body.note);
+  const result = await aiService.performWebFetch(req.validated.body, req.validated.body.tenantId || req.tenant.id);
   res.status(201).json(result.fetch);
 });
 
 api.get('/ai/web-fetch', requireAuth, authorize(['admin', 'marketing']), (req, res) => {
   res.json(aiService.listWebFetches(req.tenant.id));
+});
+
+// AI Control Center ---------------------------------------------------------
+api.get('/ai-control/evals', requireAuth, authorize(['admin']), (req, res) => {
+  res.json(evalService.list({ tenantId: req.tenant.id, status: req.query.status }));
+});
+
+api.get('/ai-control/evals/:id', requireAuth, authorize(['admin']), validateParams(schemas.idParam), (req, res, next) => {
+  const found = evalService.getById(req.params.id, req.tenant.id);
+  if (!found) return next(new AppError('NOT_FOUND', 'Eval not found', 404));
+  res.json(found);
+});
+
+api.post('/ai-control/evals', requireAuth, authorize(['admin']), validateBody(schemas.evalDefinition), (req, res) => {
+  const created = evalService.create(req.validated.body, req.validated.body.tenantId || req.tenant.id, 'human');
+  res.status(201).json(created);
+});
+
+api.put('/ai-control/evals/:id', requireAuth, authorize(['admin']), validateBody(schemas.evalDefinition), (req, res, next) => {
+  const result = evalService.update(req.params.id, req.validated.body, req.validated.body.tenantId || req.tenant.id);
+  if (result.notFound) return next(new AppError('NOT_FOUND', 'Eval not found', 404));
+  res.json(result.eval);
+});
+
+api.post('/ai-control/evals/:id/activate', requireAuth, authorize(['admin']), validateParams(schemas.idParam), (req, res, next) => {
+  const result = evalService.setStatus(req.params.id, 'active', req.tenant.id);
+  if (result.notFound) return next(new AppError('NOT_FOUND', 'Eval not found', 404));
+  res.json(result.eval);
+});
+
+api.post('/ai-control/evals/:id/deprecate', requireAuth, authorize(['admin']), validateParams(schemas.idParam), (req, res, next) => {
+  const result = evalService.setStatus(req.params.id, 'deprecated', req.tenant.id);
+  if (result.notFound) return next(new AppError('NOT_FOUND', 'Eval not found', 404));
+  res.json(result.eval);
+});
+
+api.get('/ai-control/agents', requireAuth, authorize(['admin']), (req, res) => {
+  res.json(aiRegistryService.listAgents(req.tenant.id));
+});
+
+api.get('/ai-control/agents/:id', requireAuth, authorize(['admin']), validateParams(schemas.idParam), (req, res, next) => {
+  const toolkit = aiRegistryService.buildAgentToolkit(req.params.id, req.tenant.id);
+  if (!toolkit.agent) return next(new AppError('NOT_FOUND', 'Agent not found', 404));
+  res.json(toolkit);
+});
+
+api.put('/ai-control/agents/:id', requireAuth, authorize(['admin']), validateParams(schemas.idParam), (req, res, next) => {
+  const result = aiRegistryService.updateAgent(req.params.id, req.body, req.tenant.id);
+  if (result.notFound) return next(new AppError('NOT_FOUND', 'Agent not found', 404));
+  res.json(result.agent);
+});
+
+api.get('/ai-control/autopilot', requireAuth, authorize(['admin']), (req, res) => {
+  aiService.ensureControlShape();
+  const settings =
+    (datasets.aiControl.autopilotSettings || []).find(entry => entry.tenantId === req.tenant.id) || {
+      tenantId: req.tenant.id,
+      maxLevel: 1,
+      enabled: true
+    };
+  res.json(settings);
+});
+
+api.put('/ai-control/autopilot', requireAuth, authorize(['admin']), (req, res) => {
+  aiService.ensureControlShape();
+  const settings = {
+    tenantId: req.tenant.id,
+    maxLevel: req.body.maxLevel ?? 1,
+    enabled: req.body.enabled ?? true,
+    updatedAt: new Date().toISOString()
+  };
+  const idx = (datasets.aiControl.autopilotSettings || []).findIndex(entry => entry.tenantId === req.tenant.id);
+  if (idx >= 0) {
+    datasets.aiControl.autopilotSettings[idx] = settings;
+  } else {
+    datasets.aiControl.autopilotSettings.push(settings);
+  }
+  persist.aiControl(datasets.aiControl);
+  res.json(settings);
+});
+
+api.get('/ai-control/logs', requireAuth, authorize(['admin']), (req, res) => {
+  res.json(aiLogService.list(req.query, req.tenant.id));
+});
+
+api.get('/ai-control/logs/:id', requireAuth, authorize(['admin']), validateParams(schemas.idParam), (req, res, next) => {
+  const log = aiLogService.getById(req.params.id, req.tenant.id);
+  if (!log) return next(new AppError('NOT_FOUND', 'Log not found', 404));
+  res.json(log);
+});
+
+api.post('/ai-control/run-self-test', requireAuth, authorize(['admin']), (req, res) => {
+  const result = aiAgentService.runEval({
+    tenantId: req.tenant.id,
+    evalId: 'system_self_test',
+    agentId: 'global-assistant',
+    autopilot: true,
+    user: req.user
+  });
+  res.json(result);
+});
+
+api.post('/ai-control/run-market-update', requireAuth, authorize(['admin']), (req, res) => {
+  const result = aiAgentService.runEval({
+    tenantId: req.tenant.id,
+    evalId: 'market_update_scan',
+    agentId: 'market-intel',
+    autopilot: true,
+    user: req.user
+  });
+  res.json(result);
+});
+
+api.post('/ai-control/run-daily-briefing', requireAuth, authorize(['admin']), (req, res) => {
+  const result = aiAgentService.runEval({
+    tenantId: req.tenant.id,
+    evalId: 'daily_briefing',
+    agentId: 'global-assistant',
+    autopilot: true,
+    user: req.user
+  });
+  res.json(result);
 });
 
 api.get('/webhooks', requireAuth, authorize(['admin', 'marketing']), validateQuery(schemas.webhookListQuery), (req, res) => {

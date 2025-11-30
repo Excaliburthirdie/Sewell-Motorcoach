@@ -1,58 +1,11 @@
 const { randomUUID } = require('node:crypto');
 const aiService = require('./aiService');
+const aiRegistryService = require('./aiRegistryService');
 const inventoryService = require('./inventoryService');
 const taskService = require('./taskService');
 const { datasets, persist } = require('./state');
 const { escapeOutputPayload, sanitizePayloadStrings } = require('./shared');
 const { normalizeTenantId, matchesTenant } = require('./tenantService');
-
-const CORE_MODEL_PROVIDERS = [
-  {
-    id: 'openai.chatgpt',
-    label: 'ChatGPT 4.1 Omni',
-    purpose: 'reasoning + code editing',
-    surfaces: ['chat', 'voice'],
-    enabledByDefault: true
-  },
-  {
-    id: 'google.gemini',
-    label: 'Gemini 3.0',
-    purpose: 'multimodal web + backend flows',
-    surfaces: ['chat', 'voice'],
-    enabledByDefault: true
-  }
-];
-
-const BUILT_IN_TOOLS = [
-  {
-    id: 'tool.inventory.add',
-    label: 'Add or revise vehicles',
-    run: 'createInventory',
-    permissions: ['inventory:write'],
-    description: 'Capture vehicle details via chat/voice and auto-enrich missing data.'
-  },
-  {
-    id: 'tool.web.sweep',
-    label: 'Web sweeps + data fetch',
-    run: 'performWebFetch',
-    permissions: ['web_fetch:write'],
-    description: 'Queue remote fetches for comps, pricing, and recall data.'
-  },
-  {
-    id: 'tool.tasks.flow',
-    label: 'AI task runner',
-    run: 'runTaskPlan',
-    permissions: ['tasks:write'],
-    description: 'Plan and finish multi-step work in declared order.'
-  },
-  {
-    id: 'tool.code.introspect',
-    label: 'Source inspection',
-    run: 'inspectSource',
-    permissions: ['code:read'],
-    description: 'Expose backend file metadata for AI review before edits.'
-  }
-];
 
 function safe(value) {
   return escapeOutputPayload(value);
@@ -62,33 +15,23 @@ function ensureControlShape() {
   aiService.ensureControlShape?.();
   datasets.aiControl.providers = datasets.aiControl.providers || [];
   datasets.aiControl.agents = datasets.aiControl.agents || [];
+  datasets.aiControl.toolRegistry = datasets.aiControl.toolRegistry || [];
+  datasets.aiControl.toolProfiles = datasets.aiControl.toolProfiles || [];
   datasets.aiControl.observations = datasets.aiControl.observations || [];
   datasets.aiControl.webFetches = datasets.aiControl.webFetches || [];
   datasets.aiControl.voiceSettings = datasets.aiControl.voiceSettings || [];
   datasets.aiControl.assistantSessions = datasets.aiControl.assistantSessions || [];
   datasets.aiControl.toolUseLog = datasets.aiControl.toolUseLog || [];
   datasets.aiControl.automationPlans = datasets.aiControl.automationPlans || [];
+  datasets.aiControl.autopilotSettings = datasets.aiControl.autopilotSettings || [];
 }
 
 function seedPreferredProviders(tenantId) {
   const tenant = normalizeTenantId(tenantId);
-  CORE_MODEL_PROVIDERS.forEach(provider => {
-    const exists = datasets.aiControl.providers.find(
-      entry => matchesTenant(entry.tenantId, tenant) && entry.provider === provider.id
-    );
-    if (!exists) {
-      datasets.aiControl.providers.push({
-        id: randomUUID(),
-        tenantId: tenant,
-        name: provider.label,
-        provider: provider.id,
-        model: provider.label,
-        note: provider.purpose,
-        createdAt: new Date().toISOString()
-      });
-    }
-  });
-  persist.aiControl(datasets.aiControl);
+  const seeded = aiRegistryService.seedDefaults(tenant);
+  if (seeded) {
+    persist.aiControl(datasets.aiControl);
+  }
 }
 
 function defaultVoiceSettings(tenantId) {
@@ -98,6 +41,8 @@ function defaultVoiceSettings(tenantId) {
     playbackEnabled: false,
     micEnabled: false,
     voiceName: 'DealerGuide',
+    sttProvider: 'gemini',
+    ttsProvider: 'none',
     updatedAt: new Date().toISOString()
   };
 }
@@ -112,7 +57,7 @@ function getVoiceSettings(tenantId) {
 
 function setVoiceSettings(payload, tenantId) {
   ensureControlShape();
-  const sanitized = sanitizePayloadStrings(payload, ['voiceName', 'surface', 'entrypoint']);
+  const sanitized = sanitizePayloadStrings(payload, ['voiceName', 'surface', 'entrypoint', 'sttProvider', 'ttsProvider']);
   const tenant = normalizeTenantId(tenantId);
   const existingIndex = datasets.aiControl.voiceSettings.findIndex(entry => matchesTenant(entry.tenantId, tenant));
   const next = {
@@ -122,6 +67,8 @@ function setVoiceSettings(payload, tenantId) {
     enabled: payload.enabled ?? false,
     playbackEnabled: payload.playbackEnabled ?? false,
     micEnabled: payload.micEnabled ?? false,
+    sttProvider: sanitized.sttProvider || defaultVoiceSettings(tenant).sttProvider,
+    ttsProvider: sanitized.ttsProvider || defaultVoiceSettings(tenant).ttsProvider,
     updatedAt: new Date().toISOString()
   };
   if (existingIndex >= 0) {
@@ -133,7 +80,7 @@ function setVoiceSettings(payload, tenantId) {
   return safe(next);
 }
 
-function assistantStatus(tenantId) {
+function assistantStatus(tenantId, userRole) {
   ensureControlShape();
   seedPreferredProviders(tenantId);
   const tenant = normalizeTenantId(tenantId);
@@ -181,27 +128,72 @@ function assistantStatus(tenantId) {
       {
         id: 'task_runner',
         status: 'ready',
-        description: 'AI can queue, track, and finish ordered task stacks.'
-      }
-    ],
-    activeSessions: sessions.length,
-    pendingVehicles,
-    toolkit: getToolkit(tenant),
-    automation
-  });
+      description: 'AI can queue, track, and finish ordered task stacks.'
+    }
+  ],
+  activeSessions: sessions.length,
+  pendingVehicles,
+  toolkit: getToolkit(tenant, { role: userRole }),
+  automation
+});
 }
 
-function getToolkit(tenantId) {
+function getToolkit(tenantId, options = {}) {
   ensureControlShape();
   seedPreferredProviders(tenantId);
+  const providers = aiRegistryService.listProviders(tenantId) || [];
+  const tools = aiRegistryService.listTools({
+    tenantId,
+    profileIds: options.profileIds,
+    role: options.role
+  });
   return {
-    models: CORE_MODEL_PROVIDERS.map(entry => ({
-      id: entry.id,
-      label: entry.label,
-      purpose: entry.purpose,
-      surfaces: entry.surfaces
+    models: providers.map(entry => ({
+      id: entry.id || entry.provider,
+      label: entry.name || entry.provider,
+      purpose: entry.note || entry.capabilities?.join(', '),
+      surfaces: entry.surfaces || ['chat', 'voice'],
+      type: entry.type,
+      defaultModel: entry.defaultModel || entry.model,
+      capabilities: entry.capabilities
     })),
-    tools: BUILT_IN_TOOLS
+    tools,
+    toolProfiles: aiRegistryService.listToolProfiles(tenantId),
+    agents: aiRegistryService.listAgents(tenantId)
+  };
+}
+
+function prepareAgentCall(agentId, payload = {}, tenantId) {
+  ensureControlShape();
+  seedPreferredProviders(tenantId);
+  const promptPackage = aiRegistryService.buildPromptPackage(agentId, {
+    tenantId,
+    context: payload.context,
+    user: payload.user,
+    subPrompt: payload.subPrompt || payload.message
+  });
+  if (promptPackage.error) return { error: promptPackage.error };
+  if (!promptPackage.provider) return { error: 'Provider not configured for agent' };
+
+  const providerRequest = aiService.buildProviderRequest(promptPackage.provider, {
+    prompt: promptPackage.prompt,
+    tools: promptPackage.tools,
+    model: payload.model,
+    userMessage: payload.message || payload.subPrompt
+  });
+  const fallbackRequest =
+    promptPackage.fallbackProvider &&
+    aiService.buildProviderRequest(promptPackage.fallbackProvider, {
+      prompt: promptPackage.prompt,
+      tools: promptPackage.tools,
+      model: payload.model,
+      userMessage: payload.message || payload.subPrompt
+    });
+
+  return {
+    promptPackage,
+    providerRequest,
+    fallbackRequest
   };
 }
 
@@ -372,9 +364,11 @@ function inspectSourceOverview() {
 function startSession(payload, tenantId) {
   ensureControlShape();
   const tenant = normalizeTenantId(payload.tenantId || tenantId);
-  const sanitized = sanitizePayloadStrings(payload, ['entrypoint', 'channel', 'surface']);
+  const sanitized = sanitizePayloadStrings(payload, ['entrypoint', 'channel', 'surface', 'agentId']);
   const now = new Date().toISOString();
   const initialVehicle = normalizeVehicleDraft(payload.vehicleDraft);
+  const agentId = sanitized.agentId || 'global-assistant';
+  const agent = prepareAgentCall(agentId, { context: payload.context }, tenant)?.promptPackage?.agent;
   const session = {
     id: randomUUID(),
     tenantId: tenant,
@@ -386,6 +380,8 @@ function startSession(payload, tenantId) {
     createdAt: now,
     updatedAt: now,
     pendingVehicle: Object.keys(initialVehicle).length ? initialVehicle : null,
+    agentId,
+    context: payload.context || {},
     transcript: []
   };
   datasets.aiControl.assistantSessions.push(session);
@@ -394,17 +390,27 @@ function startSession(payload, tenantId) {
     id: randomUUID(),
     from: 'assistant',
     message:
-      'Ready to help with backend tasks, chat or voice. Using ChatGPT and Gemini models with full dealer toolkit.',
+      'Ready to help with backend tasks, chat or voice. Using Gemini 3 Pro (OpenAI backup) with the full dealer toolkit.',
     at: now
   };
   session.transcript.push(greeting);
   persist.aiControl(datasets.aiControl);
-  return { session: safeSession(session), greeting: safe(greeting) };
+  const toolkit = getToolkit(tenant, { role: payload.userRole });
+  return {
+    session: safeSession(session),
+    greeting: safe(greeting),
+    agent: safe(agent || {}),
+    toolkit: safe(toolkit)
+  };
 }
 
 function appendTranscript(session, entry) {
   session.transcript = session.transcript || [];
   session.transcript.push(entry);
+}
+
+function resolveAgentId(session, payloadAgentId) {
+  return payloadAgentId || session.agentId || 'global-assistant';
 }
 
 function handleVehicleDraft(session, payload) {
@@ -435,6 +441,52 @@ function handleVehicleDraft(session, payload) {
     missingFields: missing,
     completed: false
   };
+}
+
+function buildSuggestedActions(session, payload) {
+  const actions = [];
+  const ctx = { ...session.context, ...(payload.context || {}) };
+
+  if (ctx.inventoryId) {
+    actions.push({
+      id: 'enrich_inventory_specs',
+      label: 'Enrich specs for this unit',
+      description: 'Fetch trusted specs and propose a minimal patch.',
+      toolCalls: [
+        {
+          tool: 'ai_web_fetch',
+          args: {
+            url: 'https://manufacturer.com',
+            purpose: `Look up specs for inventory ${ctx.inventoryId}`
+          }
+        },
+        {
+          tool: 'update_inventory_specs',
+          args: {
+            id: ctx.inventoryId,
+            patch: { note: 'Proposed updates after fetch' }
+          }
+        }
+      ],
+      requiresConfirmation: true
+    });
+  }
+
+  if (ctx.leadId) {
+    actions.push({
+      id: 'lead_follow_up',
+      label: 'Plan follow-up for lead',
+      description: 'Summarize intent and create a follow-up task.',
+      toolCalls: [
+        { tool: 'get_lead_detail', args: { id: ctx.leadId } },
+        { tool: 'get_lead_timeline', args: { id: ctx.leadId } },
+        { tool: 'create_task', args: { title: `Follow up with lead ${ctx.leadId}` } }
+      ],
+      requiresConfirmation: true
+    });
+  }
+
+  return actions;
 }
 
 function handleTaskFlow(session, payload, tenantId) {
@@ -472,6 +524,8 @@ function sendMessage(sessionId, payload, tenantId) {
     id: randomUUID(),
     from: 'user',
     message: sanitized.message,
+    agentId: resolveAgentId(session, payload.agentId),
+    context: payload.context,
     micActive: !!payload.micActive,
     at: now
   });
@@ -510,7 +564,31 @@ function sendMessage(sessionId, payload, tenantId) {
       'AI assistant is active across the backend. I can sweep the web, run tasks, analyze data, and prep updates—what should I tackle?';
   }
 
+  const agentId = resolveAgentId(session, payload.agentId);
+  const agentCall = prepareAgentCall(
+    agentId,
+    {
+      context: payload.context || session.context,
+      user: { role: payload.userRole },
+      message: sanitized.message
+    },
+    session.tenantId
+  );
+  if (!agentCall.error) {
+    reply.agent = {
+      id: agentId,
+      providerRequest: agentCall.providerRequest,
+      fallbackRequest: agentCall.fallbackRequest,
+      promptPackage: agentCall.promptPackage
+    };
+    reply.suggestedActions = buildSuggestedActions(session, payload);
+  } else {
+    reply.agentError = agentCall.error;
+  }
+
   session.updatedAt = now;
+  session.agentId = agentId;
+  session.context = { ...session.context, ...payload.context };
   appendTranscript(session, reply);
   persist.aiControl(datasets.aiControl);
   return { session: safeSession(session), response: safe(reply) };
@@ -524,6 +602,7 @@ module.exports = {
   sendMessage,
   ensureControlShape,
   getToolkit,
+  prepareAgentCall,
   listAutomationPlans,
   buildAutomationPlan
 };
