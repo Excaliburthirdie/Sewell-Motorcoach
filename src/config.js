@@ -30,7 +30,12 @@ module.exports = {
   },
   ai: {
     enableWebFetch: process.env.AI_WEB_FETCH === 'true',
-    fetchTimeoutMs: Number(process.env.AI_FETCH_TIMEOUT_MS || 7000)
+    fetchTimeoutMs: Number(process.env.AI_FETCH_TIMEOUT_MS || 7000),
+    fetchAllowlist: (process.env.AI_WEB_FETCH_ALLOWLIST || '*')
+      .split(',')
+      .map(domain => domain.trim().toLowerCase())
+      .filter(Boolean),
+    fetchPerTenantPerMinute: Number(process.env.AI_FETCH_PER_TENANT_PER_MINUTE || 10)
   },
   tenancy: {
     defaultTenantId: process.env.DEFAULT_TENANT_ID || 'main'
